@@ -82,7 +82,3 @@ Our work advances these approaches by explicitly modeling architecture generatio
 
 Architecture diagrams, LLM agents, Multi-agent systems, Software reverse engineering, Hypothesis falsification
 
----
-
-**Course:** CSCI 7000 Spring 2026 - Building Agents  
-**Institution:** University of Colorado Boulder
