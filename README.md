@@ -16,16 +16,21 @@ Pipeline:
 ## Project Layout
 
 ```text
-archagent/
+aai/
   cli.py                 # entrypoint
   pipeline.py            # orchestration
   agents.py              # agent calls
-  prompts.py             # prompt templates (including critic)
+  prompts.py             # loads prompts from prompts/*.md
   repo_reader.py         # repository scanning
   llm.py                 # OpenAI API wrapper
 prompts/
-  critic-agent-v2.md     # explicit critic rubric (editable)
-archagent-prompts.txt    # your existing prompt ideas/reference
+  file-summarizer.md
+  context-manager.md
+  architect.md
+  architect-revision.md
+  critic-agent-v2.md
+  reference/             # legacy/reference prompt variants
+archagent-prompts.txt    # reference-only index to split prompt files
 requirements.txt
 ```
 
@@ -56,7 +61,7 @@ export OPENAI_API_KEY="YOUR_KEY_HERE"
 Analyze this repo:
 
 ```bash
-python3 -m archagent.cli \
+python3 -m aai.cli \
   --repo-path . \
   --model gpt-4.1-mini \
   --critic-rounds 2 \
@@ -66,7 +71,7 @@ python3 -m archagent.cli \
 Analyze another local repo:
 
 ```bash
-python3 -m archagent.cli \
+python3 -m aai.cli \
   --repo-path /absolute/path/to/target/repo \
   --model gpt-4.1-mini \
   --max-files 150 \
@@ -77,7 +82,7 @@ python3 -m archagent.cli \
 Disable step-by-step logs:
 
 ```bash
-python3 -m archagent.cli --repo-path /absolute/path/to/repo --quiet
+python3 -m aai.cli --repo-path /absolute/path/to/repo --quiet
 ```
 
 ## Outputs
@@ -100,13 +105,13 @@ Each run writes:
 - identifies missing mediator components
 - proposes explicit edge actions: `keep`, `downgrade_confidence`, `remove`, `needs_more_evidence`
 
-The runtime prompt is in `archagent/prompts.py` (`CRITIC_PROMPT`), so you can iterate rapidly.
+Runtime prompts are loaded from `prompts/*.md` via `aai/prompts.py`, so each agent is editable independently.
 
 ## How To Tune Quality
 
 - Increase `--critic-rounds` to reduce false positives.
 - Reduce `--max-files` for very large repos to control cost first, then scale up.
-- Adjust prompt strictness in `archagent/prompts.py`.
+- Adjust prompts directly in `prompts/file-summarizer.md`, `prompts/context-manager.md`, `prompts/architect.md`, `prompts/architect-revision.md`, and `prompts/critic-agent-v2.md`.
 - Keep evidence requirements strict for higher trust diagrams.
 
 ## Suggested Next Improvements
