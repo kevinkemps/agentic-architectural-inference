@@ -7,3 +7,10 @@
         - Analogous to "understanding the codebase" as a new employee getting onboarded
     - compare with existing repos which have mermaid diagrams
 
+- LangGraph / CrewAI
+    - LangGraph could be a nice grounds up approach
+    - What about forking something like SWE-agent and going from there?
+
+- Prompt vs Agent? - whichever works better
+    - Prompt : Like a template which is filled and sent to an LLM
+    - Agent : Like a loop - high level goal, fill in context, and it figures out its done
