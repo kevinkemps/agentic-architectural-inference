@@ -1,84 +1,116 @@
 # Agentic Architectural Inference
 
-A multi-agent system for generating accurate high-level software architecture diagrams from source code using hypothesis-falsification reasoning with a dedicated Critic agent.
+Generate high-level architecture diagrams from a codebase with a multi-agent pipeline and a falsification-first Critic loop.
 
-## Authors
+## What This Builds
 
-- Rutuja Nikumb (RutujaRavindra.Nikumb@colorado.edu)
-- Manikandan Gunaseelan (Manikandan.Gunaseelan@colorado.edu)
-- Kevin Jones (Kevin.Jones-1@colorado.edu)
-- Ishika Patel (ishika.patel@colorado.edu)
+Input: local repository path  
+Output: Mermaid architecture diagram + evidence-backed critique reports
 
-University of Colorado Boulder  
-CSCI 7000: Building Agents (Spring 2026)
+Pipeline:
+1. `File Summarizer Agent`: summarizes each source file for architectural signals.
+2. `Context Manager Agent`: groups file summaries into subsystem partitions.
+3. `Architect Agent`: proposes components/edges + Mermaid diagram.
+4. `Critic Agent`: attempts to disprove weak edges, then forces architecture revision.
 
-## Overview
+## Project Layout
 
-This project addresses the challenge of generating and maintaining accurate architectural diagrams for complex software systems. Rather than treating architecture generation as a single synthesis task, we propose an iterative, multi-agent approach that frames it as a hypothesis-falsification process.
+```text
+archagent/
+  cli.py                 # entrypoint
+  pipeline.py            # orchestration
+  agents.py              # agent calls
+  prompts.py             # prompt templates (including critic)
+  repo_reader.py         # repository scanning
+  llm.py                 # OpenAI API wrapper
+prompts/
+  critic-agent-v2.md     # explicit critic rubric (editable)
+archagent-prompts.txt    # your existing prompt ideas/reference
+requirements.txt
+```
 
-### Key Innovation
+## Prerequisites
 
-We introduce a dedicated **Critic Agent** whose explicit role is to challenge, validate, and refine synthesized architectures by:
-- Searching for counter-evidence in code
-- Flagging low-confidence edges and components
-- Requesting re-analysis of ambiguous regions
-- Enabling iterative refinement of the diagram
+- Python 3.10+
+- OpenAI API key
+- Internet access for OpenAI API calls
 
-## Research Questions
+## Install
 
-1. **RQ1:** Can multi-agent systems generate accurate high-level architecture diagrams of complex code systems better than single-shot LLM prompts?
-2. **RQ2:** Will feedback units (critic agents, human-in-the-loop) improve diagram accuracy?
-3. **RQ3:** How do feedback steps impact architecture generation latency?
+Run from this repository root:
 
-## Technical Challenges
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
 
-- **Abstraction & Composition:** Scaling from low-level code units (functions, classes) to system-level components (modules, services)
-- **Intent Inference:** Capturing architectural "why" rather than just "what" from code
-- **Context Constraints:** Managing LLM context windows for large repositories
-- **Evaluation:** Defining fair accuracy metrics without reliable ground-truth diagrams
+Set your API key:
 
-## Approach
+```bash
+export OPENAI_API_KEY="YOUR_KEY_HERE"
+```
 
-### Multi-Agent Pipeline
+## Run
 
-1. **File Summarizer Agent** — Hierarchical code summarization producing repository-level functional overview
-2. **Context Manager** — Partitions codebase into coherent subsystems respecting context limits
-3. **Architect Agent** — Generates structured component summaries and proposes initial system diagrams
-4. **Critic Agent** — Validates components and connections, searches for counter-evidence, requests refinement
+Analyze this repo:
 
-### Output
+```bash
+python3 -m archagent.cli \
+  --repo-path . \
+  --model gpt-4.1-mini \
+  --critic-rounds 2 \
+  --out-dir outputs/latest
+```
 
-Graph-based system diagrams depicting:
-- **Nodes:** Components/services/modules
-- **Edges:** Calls, dependencies, data-flow
-- **Evidence:** Import traces, call paths, folder structure
+Analyze another local repo:
 
-## Evaluation Methodology
+```bash
+python3 -m archagent.cli \
+  --repo-path /absolute/path/to/target/repo \
+  --model gpt-4.1-mini \
+  --max-files 150 \
+  --critic-rounds 3 \
+  --out-dir outputs/target-repo
+```
 
-- Technical experiments with small and large codebases
-- Reference diagrams from established repositories
-- LLM-based evaluation using established clarity and correctness criteria
-- Comparison against fine-grained generated models (e.g., CLANG-UML)
+Disable step-by-step logs:
 
-## Related Work
+```bash
+python3 -m archagent.cli --repo-path /absolute/path/to/repo --quiet
+```
 
-This project builds upon recent advances in:
-- **NOMAD:** Multi-agent UML class diagram generation from natural language
-- **Hatahet et al.:** Reverse engineering + LLM approach for architecture descriptions
-- **ArchAgent:** Scalable legacy software architecture recovery with adaptive segmentation
-- **VisDocSketcher:** Agentic visual documentation generation with quality evaluation
+## Outputs
 
-Our work advances these approaches by explicitly modeling architecture generation as an iterative reasoning process with dedicated validation and falsification steps.
+Each run writes:
 
-## Project Status
+- `architecture.mmd`: final Mermaid flowchart
+- `architecture.json`: structured components/edges/evidence
+- `critic_reports.json`: raw critic rounds
+- `critic_report.md`: human-readable critique summary
+- `file_summaries.json`: per-file summaries
+- `partitions.json`: subsystem partitions
+- `run_stats.json`: runtime and token counters
 
-- Multi-agent system implementation: In Progress
-    - TODO Impliment with C4 diagram
-    - TODO impliment with mermaid diagram
-- Empirical evaluation: Planned
-- Results and conclusions: Planned
+## New Critic Agent Design
 
-## Keywords
+`prompts/critic-agent-v2.md` introduces a stricter falsification rubric:
+- challenges every edge direction and label
+- rejects unsupported flow claims
+- identifies missing mediator components
+- proposes explicit edge actions: `keep`, `downgrade_confidence`, `remove`, `needs_more_evidence`
 
-Architecture diagrams, LLM agents, Multi-agent systems, Software reverse engineering, Hypothesis falsification
+The runtime prompt is in `archagent/prompts.py` (`CRITIC_PROMPT`), so you can iterate rapidly.
 
+## How To Tune Quality
+
+- Increase `--critic-rounds` to reduce false positives.
+- Reduce `--max-files` for very large repos to control cost first, then scale up.
+- Adjust prompt strictness in `archagent/prompts.py`.
+- Keep evidence requirements strict for higher trust diagrams.
+
+## Suggested Next Improvements
+
+1. Add tree-sitter/static analysis tools for stronger dependency evidence.
+2. Render Mermaid to PNG/SVG in CI for docs publishing.
+3. Add evaluation harness against hand-curated architecture ground truth.
