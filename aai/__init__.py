@@ -1,0 +1,2 @@
+"""Agentic architectural inference package."""
+
