@@ -14,6 +14,7 @@ build/
 .venv/
 venv/
 env/
+code_base/
 .Python
 htmlcov/
 .coverage
@@ -35,6 +36,7 @@ coverage.xml
 
 # Logs
 *.log
+ipy_nb/output_analysis
 
 # Misc
 Thumbs.db
