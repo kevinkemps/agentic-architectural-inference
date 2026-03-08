@@ -18,25 +18,25 @@ def _load_prompt(filename: str, fallback: str) -> str:
 
 FILE_SUMMARIZER_PROMPT = _load_prompt(
     "file-summarizer.md",
-    "You are File Summarizer Agent. Return strict JSON only.",
+    "You are File Summarizer Agent.",
 )
 
 CONTEXT_MANAGER_PROMPT = _load_prompt(
     "context-manager.md",
-    "You are Context Manager Agent. Return strict JSON only.",
+    "You are Context Manager Agent.",
 )
 
 ARCHITECT_PROMPT = _load_prompt(
     "architect.md",
-    "You are Architect Agent. Return strict JSON only.",
+    "You are Architect Agent.",
 )
 
 CRITIC_PROMPT = _load_prompt(
     "critic-agent-v2.md",
-    "You are Critic Agent. Return strict JSON only.",
+    "You are Critic Agent.",
 )
 
 ARCHITECT_REVISION_PROMPT = _load_prompt(
     "architect-revision.md",
-    "You are Architect Agent revising after critic feedback. Return strict JSON only.",
+    "You are Architect Agent revising after critic feedback. ",
 )
