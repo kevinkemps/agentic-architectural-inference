@@ -16,6 +16,7 @@ from .agents import (
     summarize_file,
 )
 from .llm import build_client, reset_stats, snapshot_stats
+from .mermaid_renderer import render_mermaid_file
 from .repo_reader import load_readme, load_repo_files
 
 
@@ -206,6 +207,24 @@ def write_artifacts(out_dir: str | Path, artifacts: RunArtifacts) -> None:
         mermaid if mermaid else "flowchart LR\n",
         encoding="utf-8",
     )
+
+    mermaid_path = output_path / "architecture.mmd"
+    mermaid_path.write_text(
+        mermaid if mermaid else "flowchart LR\n",
+        encoding="utf-8",
+    )
+
+    # Render architecture.mmd to docs/diagrams.
+    try:
+        rendered = render_mermaid_file(
+            mermaid_file=mermaid_path,
+            docs_dir="docs/diagrams",
+            output_stem=f"{output_path.name}_architecture",
+        )
+        print(f"Rendered docs diagrams: {rendered[0]} and {rendered[1]}")
+    except RuntimeError as exc:
+        print(f"Skipping Mermaid PNG/SVG render: {exc}")
+
     (output_path / "architecture.json").write_text(
         json.dumps(architecture, indent=2),
         encoding="utf-8",

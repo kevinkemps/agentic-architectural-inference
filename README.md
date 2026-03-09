@@ -97,6 +97,9 @@ Each run writes:
 - `partitions.json`: subsystem partitions
 - `run_stats.json`: runtime and token counters
 
+After `architecture.mmd` is written, the pipeline also attempts to render PNG/SVG
+copies into `docs/diagrams` for docs publishing 
+
 ## New Critic Agent Design
 
 `prompts/critic-agent-v2.md` introduces a stricter falsification rubric:
