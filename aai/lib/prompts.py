@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-PROMPTS_DIR = Path(__file__).resolve().parents[1] / "prompts"
+# Prompts directory is at the repo root (two levels up from this file)
+PROMPTS_DIR = Path(__file__).resolve().parents[2] / "prompts"
 
 
 def _load_prompt(filename: str, fallback: str) -> str:
@@ -34,9 +35,4 @@ ARCHITECT_PROMPT = _load_prompt(
 CRITIC_PROMPT = _load_prompt(
     "critic-agent-v2.md",
     "You are Critic Agent.",
-)
-
-ARCHITECT_REVISION_PROMPT = _load_prompt(
-    "architect-revision.md",
-    "You are Architect Agent revising after critic feedback. ",
 )
