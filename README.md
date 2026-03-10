@@ -37,53 +37,92 @@ requirements.txt
 ## Prerequisites
 
 - Python 3.10+
-- OpenAI API key
-- Internet access for OpenAI API calls
 
-## Install
+## Setup
 
-Run from this repository root:
+### 1. Python Environment
+
+Create and activate a virtual environment:
 
 ```bash
 python3 -m venv .venv
-source .venv/bin/activate
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+```
+
+Install dependencies:
+
+```bash
 pip install -r requirements.txt
 ```
 
-Set your API key:
+### 2. Environment Configuration
+
+Copy the example environment file and configure your settings:
 
 ```bash
-export OPENAI_API_KEY="YOUR_KEY_HERE"
+cp .env_example .env
 ```
 
-## Run
+Edit `.env` to configure your LLM provider:
 
-Analyze this repo:
+#### Example Anthropic Claude Configuration
+ANTHROPIC_API_KEY=sk-ant-xxxx
+ANTHROPIC_MODEL=claude-sonnet-4-5
+LLM_PROVIDER=claude
+
+#### Note for Mac users
+Instead of ollama, mlx provides significant speed improvements (2x)
+Run with the 'local' parameter set to use mlx. Otherwise use ollama
+
+#### Optimization Settings
+```bash
+# Set to 'static' to skip LLM for the first step (faster, larger single context)
+FIRST_AGENT_MODE=llm
+```
+
+## Usage
+
+### Basic Commands
+
+1. mkdir code_base
+2. git clone repo into code_base
+3. cd aai
+Analyze the current repository in ../code_base:
 
 ```bash
-python3 -m aai.cli \
-  --repo-path . \
-  --model gpt-4.1-mini \
-  --critic-rounds 2 \
-  --out-dir outputs/latest
+python3 -m cli
 ```
 
-Analyze another local repo:
+Analyze a specific repository:
 
 ```bash
-python3 -m aai.cli \
-  --repo-path /absolute/path/to/target/repo \
-  --model gpt-4.1-mini \
-  --max-files 150 \
-  --critic-rounds 3 \
-  --out-dir outputs/target-repo
+python3 -m cli --repo-path /path/to/your/repo
 ```
 
-Disable step-by-step logs:
+### Advanced Options
+
+#### Chunking and Context Control
+Control how files are processed for different model capabilities:
 
 ```bash
-python3 -m aai.cli --repo-path /absolute/path/to/repo --quiet
+# For local 8B models (smaller chunks)
+python3 -m cli --max-chars-per-chunk 50000
+
+# For powerful models like GPT-4o (larger chunks)
+python3 -m cli --max-chars-per-chunk 500000
+
+# Adjust architect context threshold
+python3 -m cli --architect-threshold 30000
 ```
+
+#### Critique and Quality Control
+Improve diagram accuracy with multiple critique rounds:
+
+```bash
+# Single critique round (default)
+python3 -m cli --critic-rounds 1
+```
+
 
 ## Outputs
 
