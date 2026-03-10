@@ -1,1 +1,1 @@
-"""aai2 library modules."""
+"""aai library modules."""
