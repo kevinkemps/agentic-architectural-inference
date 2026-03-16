@@ -1,0 +1,99 @@
+# File Summarizer Agent Code Files
+
+## file_path: aai copy/repo_reader.py
+### purpose
+This file contains functions for scanning and reading source code files from a repository.
+### exports
+- `TEXT_SUFFIXES`: Set of file extensions for text files.
+- `SKIP_DIRS`: Set of directory names to skip during the scan.
+- `SourceFile`: A dataclass representing a source file with its path and content.
+- `load_repo_files`: Function to load source files from a repository.
+- `load_readme`: Function to load the README file from a repository.
+### dependencies
+- `os`
+- `pathlib`
+- `dataclasses`
+- `json`
+- `re`
+- `time`
+- `dataclasses`
+- `typing`
+- `openai`
+- `shutil`
+- `subprocess`
+- `sys`
+- `pathlib`
+- `typing`
+- `re`
+- `time`
+- `dataclasses`
+- `typing`
+- `openai`
+- `shutil`
+- `subprocess`
+- `sys`
+- `pathlib`
+- `typing`
+- `re`
+- `time`
+- `dataclasses`
+- `typing`
+- `openai`
+- `shutil`
+- `subprocess`
+- `sys`
+- `pathlib`
+- `typing`
+- `re`
+- `time`
+- `dataclasses`
+- `typing`
+- `openai`
+- `shutil`
+- `subprocess`
+- `sys`
+- `pathlib`
+- `typing`
+- `re`
+- `time`
+- `dataclasses`
+- `typing`
+- `openai`
+- `shutil`
+- `subprocess`
+- `sys`
+- `pathlib`
+- `typing`
+- `re`
+- `time`
+- `dataclasses`
+- `typing`
+- `openai`
+- `shutil`
+- `subprocess`
+- `sys`
+- `pathlib`
+- `typing`
+- `re`
+- `time`
+- `dataclasses`
+- `typing`
+- `openai`
+- `shutil`
+- `subprocess`
+- `sys`
+- `pathlib`
+- `typing`
+- `re`
+- `time`
+- `dataclasses`
+- `typing`
+- `openai`
+- `shutil`
+- `subprocess`
+- `sys`
+- `pathlib`
+- `typing`
+- `re`
+- `time`
+- `data

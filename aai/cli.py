@@ -1,81 +1,89 @@
-"""CLI entrypoint."""
-
 from __future__ import annotations
-
 import argparse
-from pathlib import Path
-
-from .pipeline import run_pipeline, write_artifacts
+from pipeline import run_pipeline
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Multi-agent architecture inference with critic loop."
+        description=(
+            "aai2 – multi-agent architecture inference pipeline.\n"
+            "Stages: 01_scout → 02_aggregate → 03_draft → 04_critique → 05_refined → 06_visual"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
+
+    # --- Required / primary ---
     parser.add_argument(
         "--repo-path",
-        default=".",
-        help="Path to repository to analyze",
+        default="../code_base",
+        help="Path to the repository to analyse (default: current directory)",
     )
+
+    # --- Output ---
     parser.add_argument(
-        "--model",
-        default="gpt-4.1-mini",
-        help="OpenAI model name",
+        "--out-dir",
+        default="output_analysis",
+        help="Root output directory; stage sub-dirs are created automatically (default: output_analysis)",
     )
+
+    # --- Chunking / context ---
     parser.add_argument(
-        "--max-files",
+        "--max-chars-per-chunk",
         type=int,
-        default=120,
-        help="Maximum number of source files to scan",
+        default=50_000,
+        help=(
+            "Maximum characters per file chunk sent to the FileSummarizer LLM.  "
+            "~50 000 for a 4-bit 8B local model; ~500 000 for gpt-4o (default: 50000)"
+        ),
     )
+
     parser.add_argument(
-        "--max-chars-per-file",
+        "--architect-threshold",
         type=int,
-        default=8000,
-        help="Maximum chars loaded per file",
+        default=20_000,
+        help="Maximum total characters the ContextManager passes to the Architect (default: 20000)",
     )
+
+    # --- Critic loop ---
     parser.add_argument(
         "--critic-rounds",
         type=int,
-        default=2,
-        help="Number of architect<->critic refinement rounds",
+        default=1,
+        help="Number of critique → revision cycles (default: 1)",
     )
+
+    # --- Optional reference architecture ---
     parser.add_argument(
-        "--out-dir",
-        default="outputs/latest",
-        help="Output directory for mermaid + reports",
+        "--arch-md-path",
+        default=None,
+        help="Optional path to an external reference architecture .md file",
     )
+
+    # --- Verbosity ---
     parser.add_argument(
         "--quiet",
         action="store_true",
-        help="Disable progress logging during the run",
+        help="Suppress progress logging",
     )
+
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
     try:
-        artifacts = run_pipeline(
+        out_path = run_pipeline(
             repo_path=args.repo_path,
-            model=args.model,
-            max_files=args.max_files,
-            max_chars_per_file=args.max_chars_per_file,
+            out_dir=args.out_dir,
+            arch_md_path=args.arch_md_path,
+            max_chars_per_chunk=args.max_chars_per_chunk,
+            architect_threshold=args.architect_threshold,
             critic_rounds=args.critic_rounds,
             verbose=not args.quiet,
         )
-        write_artifacts(args.out_dir, artifacts)
-        out_path = Path(args.out_dir).resolve()
-        print(f"Done. Mermaid diagram: {out_path / 'architecture.mmd'}")
-        print(f"Critic report: {out_path / 'critic_report.md'}")
-        run_stats = artifacts.run_stats
-        llm_stats = run_stats.get("llm", {})
-        print(
-            "Run stats: "
-            f"runtime={run_stats.get('runtime_seconds', 0)}s, "
-            f"requests={llm_stats.get('requests', 0)}, "
-            f"tokens={llm_stats.get('total_tokens', 0)}"
-        )
+        print(f"\nOutput directory: {out_path}")
+        print(f"  Draft diagram  : {out_path / '03_draft' / 'mermaid.md'}")
+        print(f"  Refined diagram: {out_path / '05_refined' / 'mermaid.md'}")
     except RuntimeError as exc:
         raise SystemExit(f"Error: {exc}") from exc
 
