@@ -38,10 +38,15 @@ def parse_args() -> argparse.Namespace:
     )
 
     parser.add_argument(
+        "--architect-token-threshold",
         "--architect-threshold",
+        dest="architect_threshold",
         type=int,
         default=20_000,
-        help="Maximum total characters the ContextManager passes to the Architect (default: 20000)",
+        help=(
+            "Maximum estimated prompt tokens the ContextManager passes to the Architect "
+            "(default: 20000). --architect-threshold remains as a compatibility alias."
+        ),
     )
 
     # --- Critic loop ---

@@ -27,6 +27,7 @@ from langgraph.graph import END, START, StateGraph
 from typing_extensions import TypedDict
 
 from lib.agents import STAGES, ArchitectAgent, ContextManager, CritiqueAgent, FileSummarizer
+from lib.chunking import LangChainChunker
 from lib.llm import get_model
 from lib.mermaid_renderer import render_mermaid_file
 
@@ -45,6 +46,7 @@ class PipelineConfig:
     out_dir: Path = field(default_factory=lambda: Path("output_analysis"))
     arch_md_path: Path | None = None
     max_chars_per_chunk: int = 50_000
+    chunk_overlap_chars: int = 500
     architect_threshold: int = 20_000
     critic_rounds: int = 1
 
@@ -126,7 +128,10 @@ def node_scout(state: PipelineState) -> PipelineState:
     scout = FileSummarizer(
         repo_path=cfg.repo_path,
         output_dir=cfg.out_dir,
-        max_chars_per_chunk=cfg.max_chars_per_chunk,
+    )
+    chunker = LangChainChunker(
+        max_chunk_chars=cfg.max_chars_per_chunk,
+        chunk_overlap_chars=cfg.chunk_overlap_chars,
     )
 
     files = scout.collect_files()
@@ -134,7 +139,7 @@ def node_scout(state: PipelineState) -> PipelineState:
         raise RuntimeError(f"No source files found in {cfg.repo_path}")
     logger.info("  collected %d file(s)", len(files))
 
-    chunks = scout.create_chunks(files)
+    chunks = chunker.chunk_files(files)
     logger.info("  created %d chunk(s)", len(chunks))
 
     scout.process_all(chunks, state["llm"])
@@ -143,7 +148,7 @@ def node_scout(state: PipelineState) -> PipelineState:
 
 
 def node_aggregate(state: PipelineState) -> PipelineState:
-    """Stage 2 – ContextManager: reduce summaries to fit the architect window."""
+    """Stage 2 – ContextManager: reduce summaries to fit the architect token window."""
     cfg = state["config"]
     logger.info("Stage 2 – ContextManager")
 
@@ -312,6 +317,7 @@ def run_pipeline(
     out_dir: str | Path = "output_analysis",
     arch_md_path: str | Path | None = None,
     max_chars_per_chunk: int = 50_000,
+    chunk_overlap_chars: int = 500,
     architect_threshold: int = 20_000,
     critic_rounds: int = 1,
     verbose: bool = True,
@@ -328,8 +334,10 @@ def run_pipeline(
         Optional path to an external reference architecture ``.md`` file.
     max_chars_per_chunk:
         Maximum characters per file chunk sent to the FileSummarizer LLM.
+    chunk_overlap_chars:
+        Character overlap passed to the LangChain text splitter for large files.
     architect_threshold:
-        Maximum total characters the ContextManager will pass to the Architect.
+        Maximum estimated prompt tokens the ContextManager will pass to the Architect.
     critic_rounds:
         Number of critique → revision cycles to run (default 1).
     verbose:
@@ -351,6 +359,7 @@ def run_pipeline(
         out_dir=Path(out_dir),
         arch_md_path=Path(arch_md_path) if arch_md_path else None,
         max_chars_per_chunk=max_chars_per_chunk,
+        chunk_overlap_chars=chunk_overlap_chars,
         architect_threshold=architect_threshold,
         critic_rounds=critic_rounds,
     )

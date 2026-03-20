@@ -1,99 +1,61 @@
-# File Summarizer Agent Code Files
+# file_path or file_paths
+- aai copy/repo_reader.py
+- aai copy/__init__.py
+- aai copy/llm.py
+- aai copy/prompts.py
+- aai copy/agents.py
+- aai copy/cli.py
+- aai copy/pipeline.py
+- aai copy/mermaid_renderer.py
 
-## file_path: aai copy/repo_reader.py
-### purpose
-This file contains functions for scanning and reading source code files from a repository.
-### exports
-- `TEXT_SUFFIXES`: Set of file extensions for text files.
-- `SKIP_DIRS`: Set of directory names to skip during the scan.
-- `SourceFile`: A dataclass representing a source file with its path and content.
-- `load_repo_files`: Function to load source files from a repository.
-- `load_readme`: Function to load the README file from a repository.
-### dependencies
-- `os`
-- `pathlib`
-- `dataclasses`
-- `json`
-- `re`
-- `time`
-- `dataclasses`
-- `typing`
-- `openai`
-- `shutil`
-- `subprocess`
-- `sys`
-- `pathlib`
-- `typing`
-- `re`
-- `time`
-- `dataclasses`
-- `typing`
-- `openai`
-- `shutil`
-- `subprocess`
-- `sys`
-- `pathlib`
-- `typing`
-- `re`
-- `time`
-- `dataclasses`
-- `typing`
-- `openai`
-- `shutil`
-- `subprocess`
-- `sys`
-- `pathlib`
-- `typing`
-- `re`
-- `time`
-- `dataclasses`
-- `typing`
-- `openai`
-- `shutil`
-- `subprocess`
-- `sys`
-- `pathlib`
-- `typing`
-- `re`
-- `time`
-- `dataclasses`
-- `typing`
-- `openai`
-- `shutil`
-- `subprocess`
-- `sys`
-- `pathlib`
-- `typing`
-- `re`
-- `time`
-- `dataclasses`
-- `typing`
-- `openai`
-- `shutil`
-- `subprocess`
-- `sys`
-- `pathlib`
-- `typing`
-- `re`
-- `time`
-- `dataclasses`
-- `typing`
-- `openai`
-- `shutil`
-- `subprocess`
-- `sys`
-- `pathlib`
-- `typing`
-- `re`
-- `time`
-- `dataclasses`
-- `typing`
-- `openai`
-- `shutil`
-- `subprocess`
-- `sys`
-- `pathlib`
-- `typing`
-- `re`
-- `time`
-- `data
+# purpose
+- `repo_reader.py`: Provides functions to scan and read source code files from a repository.
+- `__init__.py`: Marks the directory as a package.
+- `llm.py`: Contains helper functions for interacting with an OpenAI language model.
+- `prompts.py`: Loads and provides various prompt templates for different agents.
+- `agents.py`: Implements agents for summarizing files, partitioning summaries, proposing architectures, and refining architectures with a critic.
+- `cli.py`: Provides a command-line interface for running the architecture inference pipeline.
+- `pipeline.py`: Orchestrates the entire architecture inference process.
+- `mermaid_renderer.py`: Provides functions to render Mermaid diagrams for documentation.
+
+# exports
+- `repo_reader.py`: 
+  - `TEXT_SUFFIXES`
+  - `SKIP_DIRS`
+  - `SourceFile`
+  - `load_repo_files`
+  - `load_readme`
+- `__init__.py`: 
+  - `__init__` (marks the directory as a package)
+- `llm.py`: 
+  - `LLMStats`
+  - `build_client`
+  - `reset_stats`
+  - `snapshot_stats`
+  - `complete_json`
+  - `_extract_usage`
+  - `_parse_json_response`
+- `prompts.py`: 
+  - `FILE_SUMMARIZER_PROMPT`
+  - `CONTEXT_MANAGER_PROMPT`
+  - `ARCHITECT_PROMPT`
+  - `CRITIC_PROMPT`
+  - `ARCHITECT_REVISION_PROMPT`
+  - `_load_prompt`
+- `agents.py`: 
+  - `RunArtifacts`
+  - `summarize_file`
+  - `partition_summaries`
+  - `propose_architecture`
+  - `critic_review`
+  - `revise_architecture`
+- `cli.py`: 
+  - `parse_args`
+  - `main`
+- `pipeline.py`: 
+  - `RunArtifacts`
+  - `run_pipeline`
+  - `write_artifacts`
+- `mermaid_renderer.py`: 
+  - `_run_command`
+  - `_render_with_mmdc

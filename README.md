@@ -16,18 +16,25 @@ Pipeline:
 ## Project Layout
 
 ```text
+AGENTS.md              # canonical agent contract and handoff rules
 aai/
-  cli.py                 # entrypoint
-  pipeline.py            # orchestration
-  agents.py              # agent calls
-  prompts.py             # loads prompts from prompts/*.md
-  repo_reader.py         # repository scanning
-  llm.py                 # OpenAI API wrapper
+  __init__.py
+  cli.py                # entrypoint
+  pipeline.py           # LangGraph orchestration
+  lib/
+    agents.py           # agent implementations
+    prompts.py          # loads prompts from prompts/*.md
+    repo_reader.py      # repository scanning rules
+    chunking.py         # file chunking strategy
+    llm.py              # model/provider integration
+    mermaid_renderer.py # Mermaid rendering helpers
+docs/
+  agents/
+    README.md           # supporting docs for agent specs and experiments
 prompts/
   file-summarizer.md
   context-manager.md
   architect.md
-  architect-revision.md
   critic-agent-v2.md
   reference/             # legacy/reference prompt variants
 archagent-prompts.txt    # reference-only index to split prompt files
@@ -111,8 +118,8 @@ python3 -m cli --max-chars-per-chunk 50000
 # For powerful models like GPT-4o (larger chunks)
 python3 -m cli --max-chars-per-chunk 500000
 
-# Adjust architect context threshold
-python3 -m cli --architect-threshold 30000
+# Adjust architect token threshold
+python3 -m cli --architect-token-threshold 30000
 ```
 
 #### Critique and Quality Control
@@ -128,16 +135,20 @@ python3 -m cli --critic-rounds 1
 
 Each run writes:
 
-- `architecture.mmd`: final Mermaid flowchart
-- `architecture.json`: structured components/edges/evidence
-- `critic_reports.json`: raw critic rounds
-- `critic_report.md`: human-readable critique summary
-- `file_summaries.json`: per-file summaries
-- `partitions.json`: subsystem partitions
-- `run_stats.json`: runtime and token counters
+- `output_analysis/01_scout/summary*.md`: per-chunk scout summaries
+- `output_analysis/02_aggregate/reduced_sum*.md`: reduced context for architect input
+- `output_analysis/03_draft/mermaid.md`: initial architecture diagram
+- `output_analysis/04_critique/critique.md`: critic output for falsification and fixes
+- `output_analysis/05_refined/mermaid.md`: revised architecture diagram
+- `output_analysis/06_visual/mermaid_*.mmd`: extracted Mermaid source for rendering
 
-After `architecture.mmd` is written, the pipeline also attempts to render PNG/SVG
-copies into `docs/diagrams` for docs publishing 
+The pipeline also attempts to render visual assets during stage `06_visual` when rendering dependencies are available.
+
+## Agent Documentation
+
+- Use `AGENTS.md` in the repository root as the canonical agent contract.
+- Use `docs/agents/` for deeper or experimental agent documentation.
+- When changing stage behavior, CLI flags, prompt loading, or output paths, update docs in the same PR to keep code and documentation aligned.
 
 ## New Critic Agent Design
 
@@ -147,13 +158,13 @@ copies into `docs/diagrams` for docs publishing
 - identifies missing mediator components
 - proposes explicit edge actions: `keep`, `downgrade_confidence`, `remove`, `needs_more_evidence`
 
-Runtime prompts are loaded from `prompts/*.md` via `aai/prompts.py`, so each agent is editable independently.
+Runtime prompts are loaded from `prompts/*.md` via `aai/lib/prompts.py`, so each agent is editable independently.
 
 ## How To Tune Quality
 
 - Increase `--critic-rounds` to reduce false positives.
 - Reduce `--max-files` for very large repos to control cost first, then scale up.
-- Adjust prompts directly in `prompts/file-summarizer.md`, `prompts/context-manager.md`, `prompts/architect.md`, `prompts/architect-revision.md`, and `prompts/critic-agent-v2.md`.
+- Adjust prompts directly in `prompts/file-summarizer.md`, `prompts/context-manager.md`, `prompts/architect.md`, and `prompts/critic-agent-v2.md`.
 - Keep evidence requirements strict for higher trust diagrams.
 
 ## Suggested Next Improvements

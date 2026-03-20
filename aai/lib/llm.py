@@ -4,13 +4,54 @@ import os
 import subprocess
 import time
 from typing import Any
+
 from langchain_anthropic import ChatAnthropic
+from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_ollama import ChatOllama
 from langchain_openai import ChatOpenAI
 import requests
+import tiktoken
 from dotenv import load_dotenv
 
 load_dotenv()
+
+
+def _resolve_model_name(llm: Any) -> str | None:
+    for attr in ("model_name", "model"):
+        value = getattr(llm, attr, None)
+        if isinstance(value, str) and value:
+            return value
+    return None
+
+
+def estimate_prompt_tokens(llm: Any, system_prompt: str, human_content: str) -> int:
+    """Estimate token usage for a system + human prompt pair."""
+    messages = [
+        SystemMessage(content=system_prompt),
+        HumanMessage(content=human_content),
+    ]
+
+    if hasattr(llm, "get_num_tokens_from_messages"):
+        try:
+            return int(llm.get_num_tokens_from_messages(messages))
+        except Exception:
+            pass
+
+    joined_content = "\n\n".join(part for part in (system_prompt, human_content) if part)
+
+    if hasattr(llm, "get_num_tokens"):
+        try:
+            return int(llm.get_num_tokens(joined_content))
+        except Exception:
+            pass
+
+    model_name = _resolve_model_name(llm)
+    try:
+        encoding = tiktoken.encoding_for_model(model_name) if model_name else tiktoken.get_encoding("cl100k_base")
+    except KeyError:
+        encoding = tiktoken.get_encoding("cl100k_base")
+
+    return len(encoding.encode(joined_content))
 
 
 # ---------------------------------------------------------------------------

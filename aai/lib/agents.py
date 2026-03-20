@@ -19,6 +19,7 @@ from typing import Callable
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
+from .llm import estimate_prompt_tokens
 from .prompts import (
     ARCHITECT_PROMPT,
     CONTEXT_MANAGER_PROMPT,
@@ -39,6 +40,14 @@ STAGES = [
     "05_refined",
     "06_visual",
 ]
+
+
+def format_file_sections(files: list[dict]) -> str:
+    """Render file payloads in a consistent prompt-friendly format."""
+    return "\n\n".join(
+        f"--- FILE: {file_data['path']} ---\n{file_data['content']}"
+        for file_data in files
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -106,6 +115,10 @@ class Agent:
         """Sum the character lengths of a list of strings."""
         return sum(len(s) for s in items)
 
+    def estimate_tokens(self, llm, human_content: str, system_prompt: str | None = None) -> int:
+        """Estimate token usage for a prompt using the active model when possible."""
+        return estimate_prompt_tokens(llm, system_prompt or self.system_prompt, human_content)
+
     # ------------------------------------------------------------------
     # LLM invocation
     # ------------------------------------------------------------------
@@ -141,14 +154,12 @@ class FileSummarizer(Agent):
         repo_path: str | Path,
         output_dir: Path,
         extensions: list[str] | None = None,
-        max_chars_per_chunk: int = 50_000,
         debug: bool = False,
         stage: str = STAGES[0],
     ) -> None:
         super().__init__(stage=stage, output_dir=output_dir, debug=debug)
         self.repo_path = Path(repo_path)
         self.extensions = extensions or list(TEXT_SUFFIXES)
-        self.max_chars_per_chunk = max_chars_per_chunk
         self.system_prompt = FILE_SUMMARIZER_PROMPT
 
     def _should_include(self, filename: str) -> bool:
@@ -159,30 +170,9 @@ class FileSummarizer(Agent):
         """Walk ``self.repo_path`` and return only files matching ``self.extensions``."""
         return super().collect_files(self.repo_path, self._should_include)
 
-    def create_chunks(self, all_files: list[dict]) -> list[list[dict]]:
-        """Group files into chunks that fit within the LLM character limit."""
-        chunks: list[list[dict]] = []
-        current_chunk: list[dict] = []
-        current_size = 0
-
-        for file_data in all_files:
-            file_size = len(file_data["content"])
-            if current_size + file_size > self.max_chars_per_chunk and current_chunk:
-                chunks.append(current_chunk)
-                current_chunk = []
-                current_size = 0
-            current_chunk.append(file_data)
-            current_size += file_size
-
-        if current_chunk:
-            chunks.append(current_chunk)
-        return chunks
-
     def summarize_chunk(self, chunk: list[dict], llm) -> str:
         """Send a chunk of files to the LLM and return the structured summary."""
-        formatted_content = "\n\n".join(
-            f"--- FILE: {f['path']} ---\n{f['content']}" for f in chunk
-        )
+        formatted_content = format_file_sections(chunk)
         return self.invoke_llm(llm, formatted_content)
 
     def process_all(self, chunks: list[list[dict]], llm) -> list[str]:
@@ -206,7 +196,7 @@ class FileSummarizer(Agent):
 
 class ContextManager(Agent):
     """Stage 2 – reads scout summaries and recursively reduces them until they
-    fit within the architect's context window.
+    fit within the architect's token window.
     """
 
     def __init__(
@@ -230,13 +220,37 @@ class ContextManager(Agent):
         combined_text = "\n\n".join(summary_batch)
         return self.invoke_llm(llm, combined_text)
 
-    def reduce(self, summaries: list[str], llm) -> list[str]:
-        """Recursively shrink summaries until the total size fits the threshold."""
-        current_summaries = summaries
+    def estimate_architect_tokens(self, summaries: list[str], llm) -> int:
+        """Estimate tokens for the architect input built from reduced summaries."""
+        summary_files = [
+            {"path": f"reduced_sum{index}.md", "content": summary}
+            for index, summary in enumerate(summaries)
+        ]
+        human_content = f"## Aggregated Summaries\n{format_file_sections(summary_files)}"
+        return self.estimate_tokens(llm, human_content, system_prompt=ARCHITECT_PROMPT)
 
-        while self.calculate_total_size(current_summaries) > self.architect_threshold:
+    def save_final_summaries(self, summaries: list[str]) -> None:
+        """Replace aggregate-stage markdown outputs with only the final reduced set."""
+        stage_dir = self.output_dir / self.stage
+        for existing_file in stage_dir.glob("*.md"):
+            existing_file.unlink(missing_ok=True)
+
+        if len(summaries) == 1:
+            self.save_md("reduced_sum", summaries[0])
+            return
+
+        for index, summary in enumerate(summaries):
+            self.save_md(f"reduced_sum{index}", summary)
+
+    def reduce(self, summaries: list[str], llm) -> list[str]:
+        """Recursively shrink summaries until the architect input fits the token threshold."""
+        current_summaries = summaries
+        current_tokens = self.estimate_architect_tokens(current_summaries, llm)
+
+        while current_tokens > self.architect_threshold and len(current_summaries) > 1:
             print(
-                f"Current size {len(str(current_summaries))} exceeds threshold. Reducing..."
+                f"Current architect input is ~{current_tokens} tokens, exceeding threshold "
+                f"{self.architect_threshold}. Reducing..."
             )
             new_summaries: list[str] = []
             chunk_size = 5
@@ -244,14 +258,14 @@ class ContextManager(Agent):
                 batch = current_summaries[i: i + chunk_size]
                 reduced_summary = self.summarize_summaries(batch, llm)
                 new_summaries.append(reduced_summary)
-                self.save_md(f"reduced_sum{i}", reduced_summary)
             current_summaries = new_summaries
+            current_tokens = self.estimate_architect_tokens(current_summaries, llm)
 
-        if self.calculate_total_size(current_summaries) < self.architect_threshold:
-            print(
-                f"Current size {len(str(current_summaries))} does not need reduction"
-            )
-            self.save_md("reduced_sum", str(current_summaries))
+        print(
+            f"Final architect input estimate: ~{current_tokens} tokens across "
+            f"{len(current_summaries)} summary file(s)."
+        )
+        self.save_final_summaries(current_summaries)
         return current_summaries
 
 
@@ -314,9 +328,7 @@ class ArchitectAgent(Agent):
             return None
 
         parts = []
-        agg_text = "\n\n".join(
-            f"--- FILE: {f['path']} ---\n{f['content']}" for f in summaries
-        )
+        agg_text = format_file_sections(summaries)
         parts.append(f"## Aggregated Summaries\n{agg_text}")
 
         if arch_md:
@@ -350,19 +362,13 @@ class ArchitectAgent(Agent):
         parts = []
 
         if summaries:
-            agg_text = "\n\n".join(
-                f"--- FILE: {f['path']} ---\n{f['content']}" for f in summaries
-            )
+            agg_text = format_file_sections(summaries)
             parts.append(f"## Original Aggregated Summaries (Source of Truth)\n{agg_text}")
 
-        draft_text = "\n\n".join(
-            f"--- FILE: {f['path']} ---\n{f['content']}" for f in drafts
-        )
+        draft_text = format_file_sections(drafts)
         parts.append(f"## Current Mermaid Diagram (Draft)\n{draft_text}")
 
-        critique_text = "\n\n".join(
-            f"--- FILE: {f['path']} ---\n{f['content']}" for f in critiques
-        )
+        critique_text = format_file_sections(critiques)
         parts.append(f"## Critic Feedback\n{critique_text}")
 
         if arch_md:
@@ -438,14 +444,10 @@ class CritiqueAgent(Agent):
 
         parts = []
         if context:
-            subsystem_text = "\n\n".join(
-                f"--- FILE: {f['path']} ---\n{f['content']}" for f in context
-            )
+            subsystem_text = format_file_sections(context)
             parts.append(f"## Subsystem Summaries\n{subsystem_text}")
 
-        diagram_text = "\n\n".join(
-            f"--- FILE: {f['path']} ---\n{f['content']}" for f in diagrams
-        )
+        diagram_text = format_file_sections(diagrams)
         parts.append(f"## Candidate Architecture (Mermaid Diagram)\n{diagram_text}")
 
         if arch_md:
