@@ -1,6 +1,7 @@
 # AGENTS
 
 This document defines the standard agent roles, handoffs, and maintenance rules for this repository.
+Note in the chat when it is being referenced.
 
 ## Purpose
 

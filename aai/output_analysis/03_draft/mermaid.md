@@ -1,17 +1,50 @@
-### Reconciliation Summary
-The provided summary for `repo_reader.py` does not contain any clear architectural signals or dependencies that would justify adding or removing edges in the current architecture. The file appears to be a utility for reading and scanning files from a repository, which is a common task in code analysis tools. However, since there are no specific API handlers, database access, queues, jobs, messaging, or configuration signals, no changes are made to the existing architecture.
+#### Reconciliation Summary
+The feedback suggested that the `critic_review` function should be included as an entrypoint for the `agents.py` module. This is supported by the `architecture_signals` section of the `agents.py` file, which explicitly lists `critic_review` as an entrypoint. The `confidence` score for the `critic_review` function is also marked as 0.9, indicating strong evidence.
 
-### Updated Mermaid Diagram
+#### Updated Mermaid Diagram
 ```mermaid
 graph TD
-    A[Repository] --> B[SourceFile]
-    B --> C[load_repo_files]
-    C --> D[load_readme]
+    A[CLI] --> B[Pipeline]
+    B --> C[Agents]
+    C --> D[Repo Reader]
+    C --> E[LLM]
+    C --> F[Prompts]
+    C --> G[MERMAID Renderer]
+
+    subgraph Agents
+        C --> H[summarize_file]
+        C --> I[partition_summaries]
+        C --> J[propose_architecture]
+        C --> K[critic_review]
+        C --> L[revise_architecture]
+    end
+
+    subgraph Repo Reader
+        D --> M[load_repo_files]
+        D --> N[load_readme]
+    end
+
+    subgraph LLM
+        E --> O[build_client]
+        E --> P[reset_stats]
+        E --> Q[snapshot_stats]
+        E --> R[complete_json]
+    end
+
+    subgraph Prompts
+        F --> S[FILE_SUMMARIZER_PROMPT]
+        F --> T[CONTEXT_MANAGER_PROMPT]
+        F --> U[ARCHITECT_PROMPT]
+        F --> V[CRITIC_PROMPT]
+        F --> W[ARCHITECT_REVISION_PROMPT]
+    end
+
+    subgraph MERMAID Renderer
+        G --> X[render_mermaid_file]
+    end
 ```
 
-### Confidence Delta
-No changes to confidence scores have been made since no new architectural signals were found. The existing confidence scores remain as follows:
-
-- `A[Repository] --> B[SourceFile]`: Confidence 0.8
-- `B[SourceFile] --> C[load_repo_files]`: Confidence 0.9
-- `C[load_repo_files] --> D[load_readme]`: Confidence 0.7
+#### Confidence Delta
+| Component/Edge | New Confidence |
+|----------------|---------------|
+| `critic_review` | 0.9 (Added as an entrypoint) |

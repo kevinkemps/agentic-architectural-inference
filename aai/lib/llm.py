@@ -13,6 +13,14 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
+def _int_env(name: str, default: int) -> int:
+    """Read an integer env var with a safe fallback."""
+    try:
+        return int(os.getenv(name, str(default)))
+    except (TypeError, ValueError):
+        return default
+
+
 # ---------------------------------------------------------------------------
 # Multi-provider model factory
 # ---------------------------------------------------------------------------
@@ -53,6 +61,7 @@ def get_model(provider: str | None = None):
     """
 
     resolved = (provider or os.getenv("LLM_PROVIDER", "openai")).lower()
+    local_max_tokens = _int_env("LOCAL_MAX_OUTPUT_TOKENS", 2048)
 
     if resolved == "local":
         start_mlx_server()
@@ -62,14 +71,17 @@ def get_model(provider: str | None = None):
             base_url="http://localhost:8080/v1",
             api_key="local",
             temperature=0,
+            max_tokens=local_max_tokens,
         )
 
     elif resolved == "local-ollama":
         model_name = os.getenv("MODEL_NAME", "qwen3-vl:8b")
+        ollama_num_predict = _int_env("OLLAMA_NUM_PREDICT", local_max_tokens)
         return ChatOllama(
             model=model_name,
             base_url="http://localhost:11434",
             temperature=0,
+            num_predict=ollama_num_predict,
         )
 
     elif resolved == "claude":

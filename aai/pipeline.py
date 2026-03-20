@@ -73,7 +73,7 @@ def run_pipeline(
     # ------------------------------------------------------------------
     # Stage 1 – Scout / FileSummarizer
     # ------------------------------------------------------------------
-    _log("Stage 1 – FileSummarizer", started, verbose)
+    _log("Stage 1 - FileSummarizer", started, verbose)
     scout = FileSummarizer(
         repo_path=repo_path,
         output_dir=output_dir,
@@ -90,7 +90,7 @@ def run_pipeline(
     # ------------------------------------------------------------------
     # Stage 2 – Aggregate / ContextManager
     # ------------------------------------------------------------------
-    _log("Stage 2 – ContextManager", started, verbose)
+    _log("Stage 2 - ContextManager", started, verbose)
     aggregator = ContextManager(
         output_dir=output_dir,
         architect_threshold=architect_threshold,

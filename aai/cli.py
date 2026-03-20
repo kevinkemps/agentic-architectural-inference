@@ -6,7 +6,7 @@ from pipeline import run_pipeline
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
-            "aai2 – multi-agent architecture inference pipeline.\n"
+            "aai multi-agent architecture inference pipeline.\n"
             "Stages: 01_scout → 02_aggregate → 03_draft → 04_critique → 05_refined → 06_visual"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,

@@ -1,5 +1,47 @@
 graph TD
-    A[Repository] --> B[FileScanner]
-    B --> C[SourceFile]
-    C --> D[load_repo_files]
-    D --> E[load_readme]
+    A[CLI] --> B[Pipeline]
+    B --> C[Agents]
+    C --> D[summarize_file]
+    C --> E[partition_summaries]
+    C --> F[propose_architecture]
+    C --> G[critic_review]
+    C --> H[revise_architecture]
+    B --> I[Repo Reader]
+    B --> J[LLM]
+    B --> K[Prompts]
+    B --> L[MERMAID Renderer]
+
+    subgraph Agents
+        C --> D[summarize_file]
+        C --> E[partition_summaries]
+        C --> F[propose_architecture]
+        C --> G[critic_review]
+        C --> H[revise_architecture]
+    end
+
+    subgraph Repo Reader
+        I --> M[load_repo_files]
+        I --> N[load_readme]
+    end
+
+    subgraph LLM
+        J --> O[build_client]
+        J --> P[reset_stats]
+        J --> Q[snapshot_stats]
+        J --> R[complete_json]
+    end
+
+    subgraph Prompts
+        K --> S[FILE_SUMMARIZER_PROMPT]
+        K --> T[CONTEXT_MANAGER_PROMPT]
+        K --> U[ARCHITECT_PROMPT]
+        K --> V[CRITIC_PROMPT]
+        K --> W[ARCHITECT_REVISION_PROMPT]
+    end
+
+    subgraph MERMAID Renderer
+        L --> X[render_mermaid_file]
+    end
+
+    B --> C
+    C --> B
