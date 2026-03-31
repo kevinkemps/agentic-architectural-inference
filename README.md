@@ -80,6 +80,14 @@ Run with the 'local' parameter set to use mlx. Otherwise use ollama
 FIRST_AGENT_MODE=llm
 ```
 
+### AGENTS.md setup
+In VSCode:
+Command Pallet: Chat: Chat Settings
+- Search agent
+- Add ./ to the agent file location
+- Search agents
+- Enable AGENTS.md file
+
 ## Usage
 
 ### Basic Commands
@@ -138,14 +146,6 @@ Each run writes:
 
 After `architecture.mmd` is written, the pipeline also attempts to render PNG/SVG
 copies into `docs/diagrams` for docs publishing 
-
-## New Critic Agent Design
-
-`prompts/critic-agent-v2.md` introduces a stricter falsification rubric:
-- challenges every edge direction and label
-- rejects unsupported flow claims
-- identifies missing mediator components
-- proposes explicit edge actions: `keep`, `downgrade_confidence`, `remove`, `needs_more_evidence`
 
 Runtime prompts are loaded from `prompts/*.md` via `aai/prompts.py`, so each agent is editable independently.
 

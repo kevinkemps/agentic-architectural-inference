@@ -1,6 +1,7 @@
 # AGENTS
 
 This document defines the standard agent roles, handoffs, and maintenance rules for this repository.
+
 Always note the below in the chat when it is being referenced.
 "AGENTS.md file is in context."
 Always note the current model that is being used.

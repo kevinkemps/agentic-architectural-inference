@@ -25,7 +25,7 @@ from .prompts import (
     CRITIC_PROMPT,
     FILE_SUMMARIZER_PROMPT,
 )
-from .repo_reader import TEXT_SUFFIXES
+from .repo_reader import LangChainChunker, TEXT_SUFFIXES
 
 # ---------------------------------------------------------------------------
 # Pipeline stage constants
@@ -160,23 +160,9 @@ class FileSummarizer(Agent):
         return super().collect_files(self.repo_path, self._should_include)
 
     def create_chunks(self, all_files: list[dict]) -> list[list[dict]]:
-        """Group files into chunks that fit within the LLM character limit."""
-        chunks: list[list[dict]] = []
-        current_chunk: list[dict] = []
-        current_size = 0
-
-        for file_data in all_files:
-            file_size = len(file_data["content"])
-            if current_size + file_size > self.max_chars_per_chunk and current_chunk:
-                chunks.append(current_chunk)
-                current_chunk = []
-                current_size = 0
-            current_chunk.append(file_data)
-            current_size += file_size
-
-        if current_chunk:
-            chunks.append(current_chunk)
-        return chunks
+        """Create semantically split batches sized for the summarizer context window."""
+        chunker = LangChainChunker(max_chunk_chars=self.max_chars_per_chunk)
+        return chunker.chunk_files(all_files)
 
     def summarize_chunk(self, chunk: list[dict], llm) -> str:
         """Send a chunk of files to the LLM and return the structured summary."""
