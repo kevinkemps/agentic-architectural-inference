@@ -1,7 +1,9 @@
 # AGENTS
 
 This document defines the standard agent roles, handoffs, and maintenance rules for this repository.
-Note in the chat when it is being referenced.
+Always note the below in the chat when it is being referenced.
+"AGENTS.md file is in context."
+Always note the current model that is being used.
 
 ## Purpose
 
@@ -24,6 +26,41 @@ Primary implementation lives in `aai/`:
 - `aai/lib/repo_reader.py`: source file scanning and filtering rules
 
 Prompt definitions live in `prompts/` and are loaded at runtime.
+
+## Build and Run
+
+Primary workflow:
+
+```bash
+cd aai
+python3 -m cli
+```
+
+Common variants:
+
+```bash
+python3 -m cli --repo-path /path/to/repo
+python3 -m cli --critic-rounds 3
+python3 -m cli --max-chars-per-chunk 500000
+```
+
+Environment setup and provider configuration are documented in `README.md`.
+
+## Conventions and Pitfalls
+
+- Treat `AGENTS.md` as the architecture and stage contract source of truth.
+- Keep prompt behavior changes in `prompts/*.md`; runtime prompt loading is implemented in `aai/lib/prompts.py`.
+- Keep stage handoffs explicit via filesystem artifacts under `aai/output_analysis/`.
+- Prefer evidence-backed edits to architecture prompts; do not add speculative components or edges.
+- `LLM_PROVIDER=local` relies on MLX server behavior in `aai/lib/llm.py`; local model runs may fail if server startup fails.
+- Mermaid rendering depends on external tooling (`mmdc` or Playwright fallback) in `aai/lib/mermaid_renderer.py`; if unavailable, rendering can be skipped.
+
+## Linked References
+
+- Setup and runtime usage: `README.md`
+- Prompt contracts: `prompts/file-summarizer.md`, `prompts/context-manager.md`, `prompts/architect.md`, `prompts/critic-agent-v2.md`
+- Pipeline orchestration: `aai/pipeline.py`
+- Agent implementations: `aai/lib/agents.py`
 
 ## Stage Contract
 
