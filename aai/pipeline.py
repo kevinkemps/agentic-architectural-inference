@@ -13,7 +13,7 @@ from __future__ import annotations
 import time
 import re
 from pathlib import Path
-from lib.agents import STAGES, ArchitectAgent, ContextManager, CritiqueAgent, FileSummarizer
+from lib.agents import STAGES, ArchitectAgent, ContextManager, CritiqueAgent, CritiqueEvaluator, DesignerAgent, FileSummarizer
 from lib.llm import get_model
 from lib.mermaid_renderer import render_mermaid_file
 
@@ -33,6 +33,8 @@ def run_pipeline(
     architect_threshold: int = 20_000,
     critic_rounds: int = 1,
     verbose: bool = True,
+    eval_questions_path: str | Path | None = None,
+    enable_designer: bool = False,
 ) -> Path:
     """Run the full aai2 pipeline and return the output directory path.
 
@@ -52,6 +54,10 @@ def run_pipeline(
         Number of critique → revision cycles to run (default 1).
     verbose:
         Print progress messages.
+    eval_questions_path:
+        Optional path to evaluation questions markdown file for feedback evaluation.
+    enable_designer:
+        If True, run DesignerAgent after critique to propose prompt refinements.
 
     Returns
     -------
@@ -125,11 +131,30 @@ def run_pipeline(
             _log("  CritiqueAgent returned no output – skipping revision.", started, verbose)
             break
 
+        # Optionally evaluate critique quality
+        if eval_questions_path:
+            _log(f"  Evaluating critique quality", started, verbose)
+            evaluator = CritiqueEvaluator(output_dir=output_dir)
+            evaluator.load_eval_questions(eval_questions_path)
+            feedback = evaluator.evaluate()
+
         _log(f"Stage 5 – ArchitectAgent (revision round {round_idx}/{critic_rounds})", started, verbose)
         diagram = architect.revise(llm, arch_md_path=arch_md_path)
         if diagram is None:
             _log("  ArchitectAgent revision returned no output.", started, verbose)
             break
+
+    # ------------------------------------------------------------------
+    # Optional: Stage Designer – Critique Strategy Evolution
+    # ------------------------------------------------------------------
+    if enable_designer and eval_questions_path:
+        _log("Stage Designer – Analyzing critique patterns for strategy evolution", started, verbose)
+        designer = DesignerAgent(output_dir=output_dir)
+        proposals = designer.design(llm)
+        if proposals:
+            _log("  Designer generated prompt refinement proposals", started, verbose)
+        else:
+            _log("  Designer: insufficient failures for refinement", started, verbose)
 
     # ------------------------------------------------------------------
     # Stage 6 – Visual / Renderer

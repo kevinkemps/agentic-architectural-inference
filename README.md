@@ -1,163 +1,195 @@
-# Agentic Architectural Inference
+# Tool Retrieval Playground
 
-Generate high-level architecture diagrams from a codebase with a multi-agent pipeline and a falsification-first Critic loop.
+This repo includes a small LangChain tool demo in `langchain_tools_demo.py`.
 
-## What This Builds
+## What was added
 
-Input: local repository path  
-Output: Mermaid architecture diagram + evidence-backed critique reports
+- Two mocked tools implemented as Python functions with LangChain's `@tool`:
+	- `mock_weather_lookup(city: str)`
+	- `mock_order_status(order_id: str)`
+- An Anthropic example call:
+	- `anthropic_example_call(prompt: str)`
+- Credentials are loaded from `.env` using `python-dotenv`.
 
-Pipeline:
-1. `File Summarizer Agent`: summarizes each source file for architectural signals.
-2. `Context Manager Agent`: groups file summaries into subsystem partitions.
-3. `Architect Agent`: proposes components/edges + Mermaid diagram.
-4. `Critic Agent`: attempts to disprove weak edges, then forces architecture revision.
+## .env setup
 
-## Project Layout
+Create a `.env` file with at least:
 
-```text
-aai/
-  cli.py                 # entrypoint
-  pipeline.py            # orchestration
-  agents.py              # agent calls
-  prompts.py             # loads prompts from prompts/*.md
-  repo_reader.py         # repository scanning
-  llm.py                 # OpenAI API wrapper
-prompts/
-  file-summarizer.md
-  context-manager.md
-  architect.md
-  architect-revision.md
-  critic-agent-v2.md
-  reference/             # legacy/reference prompt variants
-archagent-prompts.txt    # reference-only index to split prompt files
-requirements.txt
-```
-
-## Prerequisites
-
-- Python 3.10+
-
-## Setup
-
-### 1. Python Environment
-
-Create and activate a virtual environment:
-
-```bash
-python3 -m venv .venv
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
-```
-
-Install dependencies:
-
-```bash
-pip install -r requirements.txt
-```
-
-### 2. Environment Configuration
-
-Copy the example environment file and configure your settings:
-
-```bash
-cp .env_example .env
-```
-
-Edit `.env` to configure your LLM provider:
-
-#### Example Anthropic Claude Configuration
-ANTHROPIC_API_KEY=sk-ant-xxxx
+```env
+ANTHROPIC_API_KEY=your_key_here
 ANTHROPIC_MODEL=claude-sonnet-4-5
-LLM_PROVIDER=claude
-
-#### Note for Mac users
-Instead of ollama, mlx provides significant speed improvements (2x)
-Run with the 'local' parameter set to use mlx. Otherwise use ollama
-
-#### Optimization Settings
-```bash
-# Set to 'static' to skip LLM for the first step (faster, larger single context)
-FIRST_AGENT_MODE=llm
 ```
 
-### AGENTS.md setup
-In VSCode:
-Command Pallet: Chat: Chat Settings
-- Search agent
-- Add ./ to the agent file location
-- Search agents
-- Enable AGENTS.md file
-
-## Usage
-
-### Basic Commands
-
-1. mkdir code_base
-2. git clone repo into code_base
-3. cd aai
-Analyze the current repository in ../code_base:
+## Run the demo
 
 ```bash
-python3 -m cli
+python langchain_tools_demo.py
 ```
 
-Analyze a specific repository:
+The script prints mocked tool outputs and attempts a real Anthropic call.
 
-```bash
-python3 -m cli --repo-path /path/to/your/repo
-```
+## Notebook Refactor Modules
 
-### Advanced Options
+To keep `tool_search_with_embeddings.ipynb` cleaner, reusable code has been moved into:
 
-#### Chunking and Context Control
-Control how files are processed for different model capabilities:
+- `lib/tool_library.py`
+	- `TOOL_LIBRARY`
+	- `mock_tool_execution(...)`
+- `lib/tool_search_utils.py`
+	- `TOOL_SEARCH_DEFINITION`
+	- `tool_to_text(...)`
+	- `build_tool_embeddings(...)`
+	- `search_tools(...)`
+	- `handle_tool_search(...)`
+- `lib/agent_utils.py`
+	- `DomainAgent`
+	- `build_default_agents(...)`
+	- `select_agent_with_llm(...)`
+	- `select_agent_with_llm_with_usage(...)`
+	- `run_agent_conversation(...)`
+- `lib/llm_utils.py`
+	- `get_model(...)`
 
-```bash
-# For local 8B models (smaller chunks)
-python3 -m cli --max-chars-per-chunk 50000
+The notebook now imports these modules instead of redefining them inline.
 
-# For powerful models like GPT-4o (larger chunks)
-python3 -m cli --max-chars-per-chunk 500000
+### Expanded tool catalog
 
-# Adjust architect context threshold
-python3 -m cli --architect-threshold 30000
-```
+`TOOL_LIBRARY` now contains 18 tools total, including the original weather/finance tools plus 10 additional tools:
 
-#### Critique and Quality Control
-Improve diagram accuracy with multiple critique rounds:
-
-```bash
-# Single critique round (default)
-python3 -m cli --critic-rounds 1
-```
+- `get_crypto_price`
+- `get_flight_status`
+- `get_hotel_availability`
+- `get_restaurant_recommendations`
+- `get_calorie_estimate`
+- `translate_text`
+- `summarize_text`
+- `create_calendar_event`
+- `track_package`
+- `get_exchange_holidays`
 
 
-## Outputs
+Each new tool also has a corresponding mocked execution branch in `mock_tool_execution(...)`.
 
-Each run writes:
+## OpenAI Variant
 
-- `architecture.mmd`: final Mermaid flowchart
-- `architecture.json`: structured components/edges/evidence
-- `critic_reports.json`: raw critic rounds
-- `critic_report.md`: human-readable critique summary
-- `file_summaries.json`: per-file summaries
-- `partitions.json`: subsystem partitions
-- `run_stats.json`: runtime and token counters
+An OpenAI Responses API version of the notebook is available at:
 
-After `architecture.mmd` is written, the pipeline also attempts to render PNG/SVG
-copies into `docs/diagrams` for docs publishing 
+- `tool_search_with_embeddings_openai.ipynb`
 
-Runtime prompts are loaded from `prompts/*.md` via `aai/prompts.py`, so each agent is editable independently.
+OpenAI-specific helpers are in:
 
-## How To Tune Quality
+- `lib/tool_search_utils_openai.py`
+	- `TOOL_SEARCH_DEFINITION_OPENAI`
+	- `tool_to_text_openai(...)`
+	- `to_openai_function_tool_openai(...)`
+	- `to_openai_tool_library_openai(...)`
+	- `build_tool_embeddings_openai(...)`
+	- `search_tools_openai(...)`
+	- `handle_tool_search_openai(...)`
+	- `build_deferred_tools_with_namespaces_openai(...)`
+	- `build_namespaced_tools_by_category_openai(...)`
 
-- Increase `--critic-rounds` to reduce false positives.
-- Reduce `--max-files` for very large repos to control cost first, then scale up.
-- Adjust prompts directly in `prompts/file-summarizer.md`, `prompts/context-manager.md`, `prompts/architect.md`, `prompts/architect-revision.md`, and `prompts/critic-agent-v2.md`.
-- Keep evidence requirements strict for higher trust diagrams.
+The hosted tool-search flow in `tool_search_with_embeddings_openai.ipynb` now reuses
+`build_namespaced_tools_by_category_openai(...)` and chains calls with
+`previous_response_id`, which avoids replaying non-input response fields
+like `created_by`.
 
-## Suggested Next Improvements
+The OpenAI notebook also includes a third comparison example where all tools are
+passed up front with no deferral, so token usage can be compared across:
+client-side search, hosted deferred search, and full upfront tool loading.
 
-1. Add tree-sitter/static analysis tools for stronger dependency evidence.
-2. Render Mermaid to PNG/SVG in CI for docs publishing.
-3. Add evaluation harness against hand-curated architecture ground truth.
+## Natural Language Tools Variant
+
+An NLT-style Anthropic notebook is available at:
+
+- `tool_search_with_natural_language.ipynb`
+
+This notebook follows a natural-language selection flow inspired by Natural
+Language Tools (selector -> parser -> execution), while still executing the
+same tool catalog from `lib/tool_library.py`.
+
+NLT helpers live in:
+
+- `lib/natural_utils.py`
+	- `build_nlt_tool_catalog(...)`
+	- `build_selector_prompt(...)`
+	- `run_nlt_selector(...)`
+	- `parse_selector_yes_no(...)`
+	- `validate_and_coerce_parameters(...)`
+	- `run_nlt_workflow(...)`
+
+By default, the NLT flow runs on the full tool catalog. The notebook also keeps
+embedding-based prefiltering as an optional toggle for larger catalogs.
+
+## Anthropic Comparison Experiments
+
+The Anthropic notebook at `tool_search_with_embeddings.ipynb` now includes a
+three-way experiment runner with token tracking and graphing for two prompts
+(weather and finance):
+
+- No search (full toolset bound upfront)
+- Minimal bind (exactly 2 tools: weather + compound interest)
+- Tool search (start with `tool_search`, load tools on demand)
+
+The notebook prints per-run metrics (input/output/total tokens, tool call
+counts) and renders a grouped bar chart for total token usage by query type.
+
+The examples section now also tracks total tokens per example query run and
+renders a summary bar chart at the end of the notebook under
+"Token Usage by Example":
+
+- Example 1: Tool search flow
+- Example 1B: Single needed tool (Anthropic SDK directly, no LangChain)
+- Example 1C: Full tool library bound up front
+- Example 2: Finance query
+- Example 4: Router -> Domain Agent (weather query), with total tokens tracked
+	as router call + selected-agent run
+
+In `run_tool_search_conversation(...)`, the model starts with only
+`tool_search`, then subsequent turns are constrained to only the discovered
+or executed tools to keep tool scope minimal.
+
+## Multi-Agent Router Example (Anthropic Notebook)
+
+`tool_search_with_embeddings.ipynb` now includes an additional bottom example
+that routes a user task through an LLM router before execution:
+
+- Router chooses one domain agent:
+	- `Travel & Lifestyle`
+	- `Finance & Markets`
+- The selected agent runs with pre-bound domain mock tools via Anthropic
+	`beta_tool` and `client.beta.messages.tool_runner`.
+- No `tool_search` call is needed in this routed path, and Example 3 does not
+	need `TOOL_LIBRARY` or `TOOL_SEARCH_DEFINITION` inputs.
+- Token usage from this routed run is stored in `example_token_usage` like the
+  other examples.
+
+The shared logic for this flow lives in `lib/agent_utils.py`, keeping notebook
+cells focused on demo usage.
+
+## ToolDreamer Notebook
+
+A ToolDreamer-style notebook is available at:
+
+- `tool_dreamer.ipynb`
+
+This notebook follows a hypothetical-tool workflow inspired by the ToolDreamer
+paper:
+
+- Generate dreamed (hypothetical) tools from a query
+- Use each dreamed tool as a retrieval anchor (QTND-style text)
+- Rank actual tools from `lib/tool_library.py`
+- Fuse per-anchor ranked lists with Reciprocal Rank Fusion (RRF)
+
+The notebook includes built-in examples for:
+
+- A weather query
+- A finance query
+
+Prompt template used for dreamed tool generation:
+
+- `tooldreamer_prompt.md`
+
+If `ANTHROPIC_API_KEY` is available in `.env`, the notebook uses live LLM
+generation. Otherwise it falls back to deterministic dreamed tools so the
+ranking flow still runs end to end.

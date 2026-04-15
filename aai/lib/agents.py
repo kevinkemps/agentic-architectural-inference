@@ -12,8 +12,10 @@ Hierarchy:
 
 from __future__ import annotations
 
+import json
 import os
 import time
+import uuid
 from pathlib import Path
 from typing import Callable
 
@@ -23,9 +25,14 @@ from .prompts import (
     ARCHITECT_PROMPT,
     CONTEXT_MANAGER_PROMPT,
     CRITIC_PROMPT,
+    DESIGNER_PROMPT,
     FILE_SUMMARIZER_PROMPT,
 )
 from .repo_reader import LangChainChunker, TEXT_SUFFIXES
+from .logging_config import get_logger
+
+# Get module logger
+logger = get_logger(__name__)
 
 # ---------------------------------------------------------------------------
 # Pipeline stage constants
@@ -412,8 +419,11 @@ class CritiqueAgent(Agent):
                 print(f"Could not read arch_md_path {self.arch_md_path}: {exc}")
         return None
 
-    def critique(self, llm) -> str | None:
-        """Run the Critic LLM on the Mermaid diagram + context and save the critique."""
+    def critique(self, llm, evolved_prompt_path: str | Path | None = None) -> str | None:
+        """Run the Critic LLM on the Mermaid diagram + context and save the critique.
+        
+        If evolved_prompt_path is provided, uses that prompt instead of the base CRITIC_PROMPT.
+        """
         diagrams = self.collect_files()
         context = self.collect_context()
         arch_md = self.load_arch_md()
@@ -421,6 +431,18 @@ class CritiqueAgent(Agent):
         if not diagrams:
             print("No Mermaid diagram found in 03_draft/. Run ArchitectAgent first.")
             return None
+
+        # Load evolved prompt if provided
+        if evolved_prompt_path:
+            try:
+                evolved_path = Path(evolved_prompt_path)
+                if evolved_path.exists():
+                    self.system_prompt = evolved_path.read_text(encoding="utf-8").strip()
+                    print(f"Loaded evolved prompt from {evolved_prompt_path}")
+                else:
+                    print(f"Evolved prompt path not found: {evolved_prompt_path}. Using base prompt.")
+            except Exception as exc:
+                print(f"Could not load evolved prompt: {exc}. Using base prompt.")
 
         parts = []
         if context:
@@ -446,3 +468,339 @@ class CritiqueAgent(Agent):
         critique_text = self.invoke_llm(llm, human_content)
         self.save_md("critique", critique_text)
         return critique_text
+
+
+# ---------------------------------------------------------------------------
+# Stage 4 – CritiqueEvaluator
+# ---------------------------------------------------------------------------
+
+class CritiqueEvaluator(Agent):
+    """Evaluates the effectiveness of critique outputs against evaluation questions.
+    
+    Tracks:
+      - Did the critique identify actual architectural issues?
+      - Did the revision address the critique?
+      - Quality metrics (precision, recall, false positives/negatives)
+    
+    Outputs feedback to ``04_critique/feedback.json`` with success/failure logs.
+    """
+
+    def __init__(
+        self,
+        output_dir: Path,
+        debug: bool = False,
+        stage: str = STAGES[3],
+    ) -> None:
+        super().__init__(stage=stage, output_dir=output_dir, debug=debug)
+        self.draft_path = output_dir / STAGES[2]      # 03_draft/
+        self.critique_path = output_dir / STAGES[3]   # 04_critique/
+        self.refined_path = output_dir / STAGES[4]    # 05_refined/
+        self.eval_questions: list[str] = []
+
+    def load_eval_questions(self, eval_md_path: str | Path) -> None:
+        """Load evaluation questions from markdown file."""
+        try:
+            content = Path(eval_md_path).read_text(encoding="utf-8")
+            # Extract numbered questions (lines starting with digit.)
+            lines = content.split("\n")
+            questions = [line.strip() for line in lines if line.strip() and line[0].isdigit()]
+            self.eval_questions = questions
+            print(f"Loaded {len(questions)} evaluation questions")
+        except Exception as exc:
+            print(f"Could not load eval questions: {exc}")
+
+            logger.debug(f"Loaded {len(questions)} evaluation questions from {eval_md_path}")
+    except FileNotFoundError as exc:
+        logger.error(f"Evaluation questions file not found at {eval_md_path}: {exc}", exc_info=True)
+    except Exception as exc:
+        logger.error(f"Could not load eval questions from {eval_md_path}: {exc}", exc_info=True)
+    def evaluate_critique(self, critique_text: str) -> dict:
+        """Analyze a critique and score its effectiveness.
+        
+        Returns a dict with: effectiveness_score, coverage (which eval questions addressed),
+        false_positives_risk, actionability_score.
+        """
+        # Estimate false positives by checking for vague language
+                    logger.debug(f"Loaded {len(questions)} evaluation questions from {eval_md_path}")
+                except FileNotFoundError as exc:
+                    logger.error(f"Evaluation questions file not found at {eval_md_path}: {exc}", exc_info=True)
+                except Exception as exc:
+                    logger.error(f"Could not load eval questions from {eval_md_path}: {exc}", exc_info=True)
+        vague_phrases = ["might", "could potentially", "seems", "appears to"]
+        vague_count = sum(1 for phrase in vague_phrases if phrase in critique_text.lower())
+
+        # Estimate actionability by checking for concrete recommendations
+        actionable_patterns = ["add", "remove", "refactor", "rename", "split", "merge", "reorganize"]
+        actionable_count = sum(1 for pattern in actionable_patterns if pattern in critique_text.lower())
+
+        effectiveness = (len(coverage) / max(len(self.eval_questions), 1)) * 100
+        false_positive_risk = min(vague_count * 10, 50)  # Cap at 50%
+        actionability = min(actionable_count * 15, 100)  # Cap at 100%
+
+        return {
+            "effectiveness_score": round(effectiveness, 1),
+            "coverage": coverage,
+            "false_positive_risk": round(false_positive_risk, 1),
+            "actionability_score": round(actionability, 1),
+        }
+
+    def save_feedback(self, feedback_data: dict) -> None:
+        """Save evaluation feedback to feedback.json."""
+        feedback_path = self.output_dir / self.stage / "feedback.json"
+        try:
+            feedback_path.parent.mkdir(parents=True, exist_ok=True)
+            # Append to existing feedback if present, or create new
+            existing = {}
+            if feedback_path.exists():
+                try:
+                    existing = json.loads(feedback_path.read_text(encoding="utf-8"))
+                except json.JSONDecodeError:
+                    existing = {}
+
+            # Add timestamp and unique ID
+            feedback_data["run_id"] = str(uuid.uuid4())[:8]
+            feedback_data["timestamp"] = time.strftime("%Y-%m-%d %H:%M:%S")
+            existing[feedback_data["run_id"]] = feedback_data
+
+            feedback_path.write_text(json.dumps(existing, indent=2), encoding="utf-8")
+            print(f"Saved feedback to {feedback_path}")
+        except Exception as exc:
+            print(f"Could not save feedback: {exc}")
+
+    def evaluate(self, llm=None) -> dict:
+        """Run evaluation: load critique, analyze it, save feedback."""
+        try:
+            critique_path = self.critique_path / "critique.md"
+            if not critique_path.exists():
+                print(f"No critique found at {critique_path}")
+                return {}
+
+            critique_text = critique_path.read_text(encoding="utf-8")
+            feedback = self.evaluate_critique(critique_text)
+            self.save_feedback(feedback)
+            return feedback
+        except Exception as exc:
+            print(f"Evaluation failed: {exc}")
+            return {}
+
+
+# ---------------------------------------------------------------------------
+# Stage 4 – DesignerAgent (Critique Evolution)
+# ---------------------------------------------------------------------------
+
+class DesignerAgent(Agent):
+    """Evolves critique strategies by analyzing failed critique cases.
+    
+    Reads failed critique feedback, analyzes why they failed, and proposes
+    prompt refinements to improve future critiques.
+    
+    Inputs:
+      - ``04_critique/feedback.json``: Evaluation results from CritiqueEvaluator
+      - ``03_draft/*.md``: Draft diagrams to understand context
+      - ``02_aggregate/*.md``: Source summaries for analysis
+      - ``04_critique/critique.md``: The critique that failed
+      
+    Outputs:
+      - ``04_critique/designer_proposals.md``: Proposed prompt refinements
+      - ``04_critique/evolution_history.json``: Versioning metadata
+    """
+
+    def __init__(
+        self,
+        output_dir: Path,
+        debug: bool = False,
+        stage: str = STAGES[3],  # Works in critique stage directory
+    ) -> None:
+        super().__init__(stage=stage, output_dir=output_dir, debug=debug)
+        self.draft_path = output_dir / STAGES[2]      # 03_draft/
+        self.agg_path = output_dir / STAGES[1]        # 02_aggregate/
+        self.critique_path = output_dir / STAGES[3]   # 04_critique/
+        self.system_prompt = DESIGNER_PROMPT
+        self.failure_threshold = 3  # Minimum failures before proposing changes
+
+    def load_feedback(self) -> dict:
+        """Load aggregate feedback from feedback.json."""
+        feedback_path = self.critique_path / "feedback.json"
+        try:
+            if feedback_path.exists():
+                return json.loads(feedback_path.read_text(encoding="utf-8"))
+        except Exception as exc:
+            print(f"Could not load feedback: {exc}")
+        return {}
+
+    def load_evolution_history(self) -> dict:
+        """Load prompt version history and metrics."""
+        history_path = self.critique_path / "evolution_history.json"
+        try:
+            if history_path.exists():
+                return json.loads(history_path.read_text(encoding="utf-8"))
+        except Exception as exc:
+            print(f"Could not load evolution history: {exc}")
+        return {"versions": [], "current_version": "base"}
+
+    def collect_context(self) -> dict:
+        """Gather all context needed for analysis: summaries, draft, recent critique."""
+        context = {
+            "summaries": [],
+            "diagram": None,
+            "critique": None,
+        }
+
+        # Load aggregated summaries
+        try:
+            summaries = super().collect_files(self.agg_path, lambda f: f.endswith(".md"))
+            context["summaries"] = summaries
+        except Exception as exc:
+            print(f"Could not load summaries: {exc}")
+
+        # Load draft diagram
+        try:
+            diagram_path = self.draft_path / "mermaid.md"
+            if diagram_path.exists():
+                context["diagram"] = diagram_path.read_text(encoding="utf-8")
+        except Exception as exc:
+            print(f"Could not load draft diagram: {exc}")
+
+        # Load critique
+        try:
+            critique_path = self.critique_path / "critique.md"
+            if critique_path.exists():
+                context["critique"] = critique_path.read_text(encoding="utf-8")
+        except Exception as exc:
+            print(f"Could not load critique: {exc}")
+
+        return context
+
+    def identify_failure_patterns(self, feedback: dict) -> list[dict]:
+        """Analyze feedback to identify recurring failure patterns.
+        
+        Returns list of failure patterns: [{"pattern": str, "count": int, "runs": [str]}]
+        """
+        if not feedback:
+            return []
+
+        # Group failures by type (low effectiveness or high false positive risk)
+        patterns: dict[str, dict] = {}
+
+        for run_id, run_data in feedback.items():
+            if run_data.get("effectiveness_score", 100) < 50:
+                pattern_key = "low_effectiveness"
+                if pattern_key not in patterns:
+                    patterns[pattern_key] = {"pattern": "Critique ineffective (coverage gaps)", "runs": []}
+                patterns[pattern_key]["runs"].append(run_id)
+
+            if run_data.get("false_positive_risk", 0) > 30:
+                pattern_key = "high_false_positives"
+                if pattern_key not in patterns:
+                    patterns[pattern_key] = {"pattern": "High rate of vague/unactionable feedback", "runs": []}
+                patterns[pattern_key]["runs"].append(run_id)
+
+            if run_data.get("actionability_score", 0) < 40:
+                pattern_key = "low_actionability"
+                if pattern_key not in patterns:
+                    patterns[pattern_key] = {"pattern": "Critique lacks specific recommendations", "runs": []}
+                patterns[pattern_key]["runs"].append(run_id)
+
+        return [
+            {"pattern": v["pattern"], "count": len(v["runs"]), "runs": v["runs"]}
+            for v in patterns.values()
+        ]
+
+    def propose_refinement(self, llm, failure_patterns: list[dict], context: dict) -> str | None:
+        """Generate prompt refinement proposals using the LLM.
+        
+        Args:
+            llm: The language model
+            failure_patterns: List of identified failure patterns
+            context: Full context (summaries, diagram, critique)
+            
+        Returns:
+            Generated proposals or None if generation fails
+        """
+        if not failure_patterns:
+            print("No significant failure patterns identified. Skipping Designer.")
+            return None
+
+        pattern_text = "\n".join([f"- {p['pattern']} ({p['count']} occurrences)" for p in failure_patterns])
+
+        summary_text = "\n\n".join(
+            f"--- FILE: {f['path']} ---\n{f['content']}"
+            for f in context.get("summaries", [])
+        )
+
+        diagram_text = context.get("diagram", "No diagram available")
+        critique_text = context.get("critique", "No critique available")
+
+        human_content = f"""## Failure Patterns Identified
+{pattern_text}
+
+## Source Summaries (Source of Truth)
+{summary_text}
+
+## Draft Diagram
+{diagram_text}
+
+## Recent Critique Output
+{critique_text}
+
+---
+
+Based on the failure patterns and the critique output above, propose specific refinements to improve the critique prompt. Show how the revised section should look."""
+
+        print("Running DesignerAgent to propose criticqueee refinements...")
+        proposal = self.invoke_llm(llm, human_content)
+        return proposal
+
+    def save_proposals(self, proposals: str) -> None:
+        """Save proposal markdown to the stage directory."""
+        self.save_md("designer_proposals", proposals)
+
+    def update_evolution_history(self, proposal_summary: str, metrics: dict) -> None:
+        """Record this design iteration in evolution history."""
+        history = self.load_evolution_history()
+
+        # Determine next version number
+        current_version = history.get("current_version", "base")
+        version_num = len(history.get("versions", []))
+        next_version = f"v{version_num + 1}"
+
+        # Record this iteration
+        history["versions"].append({
+            "version": next_version,
+            "source": current_version,
+            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+            "proposal_summary": proposal_summary[:200],  # First 200 chars
+            "metrics": metrics,
+        })
+            history_path.write_text(json.dumps(history, indent=2), encoding="utf-8")
+            print(f"Updated evolution history: {next_version}")
+        except Exception as exc:
+            print(f"Could not update evolution history: {exc}")
+
+    def design(self, llm) -> str | None:
+        """Main entry point: analyze feedback, propose refinements, update history."""
+        feedback = self.load_feedback()
+        if not feedback:
+            print("No feedback data available. Skipping Designer.")
+            return None
+
+        failure_patterns = self.identify_failure_patterns(feedback)
+        if not failure_patterns or sum(p["count"] for p in failure_patterns) < self.failure_threshold:
+            print(f"Insufficient failures ({sum(p['count'] for p in failure_patterns)} < {self.failure_threshold}). Skipping Designer.")
+            return None
+
+        context = self.collect_context()
+        proposals = self.propose_refinement(llm, failure_patterns, context)
+
+        if proposals:
+            self.save_proposals(proposals)
+            
+            # Track metrics for this iteration
+            metrics = {
+                "failure_patterns_count": len(failure_patterns),
+                "total_failures": sum(p["count"] for p in failure_patterns),
+                "patterns": failure_patterns,
+            }
+            self.update_evolution_history(proposals, metrics)
+
+        return proposals

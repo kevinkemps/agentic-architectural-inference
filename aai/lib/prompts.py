@@ -17,6 +17,24 @@ def _load_prompt(filename: str, fallback: str) -> str:
         return fallback
 
 
+def load_evolved_prompt(version: str) -> str | None:
+    """Load an evolved critic prompt by version string.
+    
+    Args:
+        version: Version identifier (e.g., "v1", "v2")
+        
+    Returns:
+        Prompt text if found, None otherwise.
+    """
+    filename = f"critic-agent-v2-evolved-{version}.md"
+    path = PROMPTS_DIR / filename
+    try:
+        text = path.read_text(encoding="utf-8").strip()
+        return text if text else None
+    except OSError:
+        return None
+
+
 FILE_SUMMARIZER_PROMPT = _load_prompt(
     "file-summarizer.md",
     "You are File Summarizer Agent.",
@@ -35,4 +53,9 @@ ARCHITECT_PROMPT = _load_prompt(
 CRITIC_PROMPT = _load_prompt(
     "critic-agent-v2.md",
     "You are Critic Agent.",
+)
+
+DESIGNER_PROMPT = _load_prompt(
+    "designer-agent.md",
+    "You are Designer Agent that evolves critique strategies.",
 )

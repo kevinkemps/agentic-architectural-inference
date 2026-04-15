@@ -1,39 +1,6 @@
 graph TD
-    A[CLI] --> B[Pipeline]
-    B --> C[Agents]
-    C --> D[Repo Reader]
-    C --> E[LLM]
-    C --> F[Prompts]
-    C --> G[MERMAID Renderer]
-
-    subgraph Agents
-        C --> H[summarize_file]
-        C --> I[partition_summaries]
-        C --> J[propose_architecture]
-        C --> K[critic_review]
-        C --> L[revise_architecture]
-    end
-
-    subgraph Repo Reader
-        D --> M[load_repo_files]
-        D --> N[load_readme]
-    end
-
-    subgraph LLM
-        E --> O[build_client]
-        E --> P[reset_stats]
-        E --> Q[snapshot_stats]
-        E --> R[complete_json]
-    end
-
-    subgraph Prompts
-        F --> S[FILE_SUMMARIZER_PROMPT]
-        F --> T[CONTEXT_MANAGER_PROMPT]
-        F --> U[ARCHITECT_PROMPT]
-        F --> V[CRITIC_PROMPT]
-        F --> W[ARCHITECT_REVISION_PROMPT]
-    end
-
-    subgraph MERMAID Renderer
-        G --> X[render_mermaid_file]
-    end
+    A[CLI] --> B[agents.py]
+    B --> C[pipeline.py]
+    C --> D[repo_reader.py]
+    C --> E[llm.py]
+    C --> F[prompts.py]
