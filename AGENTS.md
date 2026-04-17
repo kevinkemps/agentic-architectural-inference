@@ -16,27 +16,6 @@ The pipeline in this project infers software architecture from source code using
 
 For prompt-level files and future agent variants, use `docs/agents/`.
 
-
-# Rule: Context Archival
-IF the conversation involves making changes to code or CI/CD debugging:
-THEN, before concluding the session or moving to a new task:
-  1. Generate a concise "Test Insight" block.
-  2. Append this block to `.chat_stash/logs/evolution.md`.
-  3. Format the block as follows:
-     - Date: [ISO Date]
-     - Component: [e.g., Aggregator, Signal Processor]
-     - Problem: [What was failing or missing?]
-     - Solution Pattern: [The specific logic/mock used to fix it]
-     - Hardware Note: [Relevant VRAM/M-series/NVIDIA specifics]
-Note that this is done at the end of the chat.
-
-# Rule: Context clearing and evolution:
-IF `.chat_stash/logs/evolution.md` has 2 or more blocks:
-1.  Read the ENTIRE File
-2. Summarrize if there are lessons to be learned from the conversations or repeated patterns.
-3. Summarrize the pattern in this file under `Notes from previous chats:`
-4. Clear `.chat_stash/logs/evolution.md`
-
 ## Repository Scope
 
 Primary implementation lives in `aai/`:
@@ -131,29 +110,6 @@ Output root defaults to `aai/output_analysis/` when running from the `aai/` dire
 - Responsibility: challenge unsupported claims, edge directions, and missing mediators before refinement
 - Optional input: `evolved_prompt_path` to load improved prompts from evolution cycles
 
-### 4a) CritiqueEvaluator (Feedback Collection)
-
-- Class: `CritiqueEvaluator`
-- Reads: `04_critique/critique.md`, `aai/evaluation/eval_questions.md`
-- Writes: `04_critique/feedback.json` (evaluation results per run)
-- Responsibility: measure critique effectiveness using heuristic metrics (effectiveness, actionability, false positive risk)
-- Triggered by: `--eval-questions-path` CLI flag
-- Output format: JSON with keys `effectiveness_score`, `actionability_score`, `false_positive_risk`, `coverage`
-
-### 4b) DesignerAgent (Critique Strategy Evolution)
-
-- Class: `DesignerAgent`
-- Reads: `04_critique/feedback.json`, `03_draft/*.md`, `02_aggregate/*.md`, `04_critique/critique.md`
-- Writes: `04_critique/designer_proposals.md`, `04_critique/evolution_history.json`
-- Responsibility: analyze failure patterns in critiques and propose prompt refinements
-- Triggered by: `--enable-designer` CLI flag (requires `--eval-questions-path`)
-- Process:
-  1. Loads feedback history; identifies patterns (low effectiveness, high false positives, low actionability)
-  2. Calls LLM to generate refinement proposals based on pattern analysis
-  3. Tracks prompt versions in `evolution_history.json` with metrics
-  4. Saves human-readable proposals to `designer_proposals.md`
-- Output: Versioned evolved prompts (e.g., `prompts/critic-agent-v2-evolved-v1.md`) managed by operator
-
 ### 5) Renderer (Visual)
 
 - Node: render step in `aai/pipeline.py`
@@ -203,6 +159,3 @@ Use `docs/agents/` for:
 - review checklists and governance docs
 
 Keep this root `AGENTS.md` as the stable, high-level contract.
-
-
-# Notes from previous chats:
