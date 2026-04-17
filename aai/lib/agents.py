@@ -123,7 +123,10 @@ class Agent:
             SystemMessage(content=self.system_prompt),
             HumanMessage(content=human_content),
         ]
-        response = llm.invoke(messages)
+        try:
+            response = llm.invoke(messages)
+        except Exception as exc:
+            raise RuntimeError(f"LLM call failed: {exc}") from exc
         self.token_use.append(response.usage_metadata)
         return response.content
 

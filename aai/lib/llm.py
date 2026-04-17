@@ -21,6 +21,31 @@ def _int_env(name: str, default: int) -> int:
         return default
 
 
+def _clean_env(name: str) -> str | None:
+    """Read and normalize an env var, returning None when empty."""
+    raw = os.getenv(name)
+    if raw is None:
+        return None
+    value = raw.strip().strip('"').strip("'")
+    return value or None
+
+
+def _required_api_key(name: str) -> str:
+    """Return a validated API key string for provider auth."""
+    value = _clean_env(name)
+    if not value:
+        raise RuntimeError(f"Missing required environment variable: {name}")
+
+    # Catch common placeholder values before sending a request.
+    lowered = value.lower()
+    if "xxxx" in lowered or "your_" in lowered or "replace" in lowered:
+        raise RuntimeError(
+            f"{name} appears to be a placeholder value. Set a real API key in .env."
+        )
+
+    return value
+
+
 # ---------------------------------------------------------------------------
 # Multi-provider model factory
 # ---------------------------------------------------------------------------
@@ -88,7 +113,7 @@ def get_model(provider: str | None = None):
         model_name = os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-5")
         return ChatAnthropic(
             model=model_name,
-            api_key=os.getenv("ANTHROPIC_API_KEY"),
+            api_key=_required_api_key("ANTHROPIC_API_KEY"),
             temperature=0,
         )
 
@@ -96,6 +121,6 @@ def get_model(provider: str | None = None):
         model_name = os.getenv("OPENAI_MODEL", "gpt-4o")
         return ChatOpenAI(
             model=model_name,
-            api_key=os.getenv("OPENAI_API_KEY"),
+            api_key=_required_api_key("OPENAI_API_KEY"),
             temperature=0,
         )

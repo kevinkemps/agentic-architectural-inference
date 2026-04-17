@@ -6,3 +6,11 @@
 4. What data sources and sinks exist in this program?
 5. Based on the complexity of the functions and the number of dependencies, which parts of this codebase are likely the most fragile or difficult to test?
 6. What architectural design patterns are most prevalent in this project?
+
+-------------
+## Repo specific questions
+
+7. What systems is this code base run on?
+8. What are system specific pieces of the code?
+9. What are the necessary parts of the code to train the models?
+10. Where do the images come from?

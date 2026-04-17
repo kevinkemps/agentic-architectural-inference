@@ -1,6 +1,78 @@
-graph TD
-    A[CLI] --> B[agents.py]
-    B --> C[pipeline.py]
-    C --> D[repo_reader.py]
-    C --> E[llm.py]
-    C --> F[prompts.py]
+graph TB
+    subgraph External["External Services"]
+        RoboflowAPI["Roboflow API<br/>(Dataset & Models)"]
+        RTSPStream["RTSP Camera Stream"]
+    end
+
+    subgraph Development["Development Environment (macOS)"]
+        DownloadScript["download_dataset.py<br/>(Dataset Download)"]
+        TrainingWorkflow["YOLO Training<br/>(ultralytics CLI)"]
+        ConversionScript["convert_to_tflite_simple.py<br/>(Model Conversion)"]
+        EnvConfig[".env Configuration<br/>(API Keys)"]
+    end
+
+    subgraph EdgeDeployment["Edge Deployment (Jetson)"]
+        DirectInf["direct_inf.py<br/>(Single Image)"]
+        TimedRun["timed_run.py<br/>(Benchmarking)"]
+        StreamInf["stream_inf.py<br/>(RTSP Processing)"]
+        ContainerWorkflow["on_container.py<br/>(Server Workflow)"]
+        LocalInferenceServer["Local Inference Server<br/>(localhost:9001)"]
+    end
+
+    subgraph ModelArtifacts["Model Artifacts"]
+        PTModels["Pre-trained Models<br/>(.pt format)"]
+        ONNXModels["ONNX Exports<br/>(.onnx format)"]
+        TFLiteModels["TFLite Models<br/>(.tflite format)"]
+        SavedModel["TensorFlow SavedModel<br/>(metadata.yaml)"]
+    end
+
+    subgraph SharedLibraries["Shared Dependencies"]
+        InferenceSDK["inference / inference-sdk<br/>(Model Loading)"]
+        Supervision["supervision<br/>(Visualization)"]
+        OpenCV["opencv-python<br/>(Image/Video Processing)"]
+        TFLiteRuntime["tflite_runtime<br/>(TFLite Inference)"]
+    end
+
+    %% Development Workflow
+    EnvConfig -->|"provides credentials<br/>[0.95]"| DownloadScript
+    DownloadScript -->|"downloads dataset<br/>[0.92]"| RoboflowAPI
+    DownloadScript -->|"writes to paraglider_recognition-8/<br/>[0.92]"| TrainingWorkflow
+    TrainingWorkflow -->|"produces .pt models<br/>[0.90]"| PTModels
+    PTModels -->|"input for conversion<br/>[0.88]"| ConversionScript
+    ConversionScript -->|"exports to TFLite<br/>[0.85]"| TFLiteModels
+    ConversionScript -->|"exports to ONNX<br/>[0.85]"| ONNXModels
+    PTModels -->|"exports to SavedModel<br/>[0.80]"| SavedModel
+
+    %% Edge Deployment Workflows
+    EnvConfig -->|"provides RTSP_URL<br/>[0.90]"| StreamInf
+    TFLiteModels -->|"loaded for inference<br/>[0.90]"| DirectInf
+    TFLiteModels -->|"loaded for benchmarking<br/>[0.90]"| TimedRun
+    
+    StreamInf -->|"connects to stream<br/>[0.88]"| RTSPStream
+    StreamInf -->|"uses InferencePipeline<br/>[0.92]"| InferenceSDK
+    
+    ContainerWorkflow -->|"sends requests<br/>[0.95]"| LocalInferenceServer
+    LocalInferenceServer -->|"loads models from<br/>[0.85]"| RoboflowAPI
+    
+    DirectInf -->|"uses for inference<br/>[0.90]"| TFLiteRuntime
+    TimedRun -->|"uses for inference<br/>[0.90]"| TFLiteRuntime
+    
+    %% Shared Library Usage
+    DirectInf -->|"uses for visualization<br/>[0.88]"| Supervision
+    StreamInf -->|"uses for visualization<br/>[0.88]"| Supervision
+    DirectInf -->|"uses for image I/O<br/>[0.92]"| OpenCV
+    StreamInf -->|"uses for video processing<br/>[0.92]"| OpenCV
+    TimedRun -->|"uses for image I/O<br/>[0.92]"| OpenCV
+
+    %% Styling
+    classDef external fill:#e1f5ff,stroke:#0288d1,stroke-width:2px
+    classDef development fill:#fff3e0,stroke:#f57c00,stroke-width:2px
+    classDef edge fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px
+    classDef artifacts fill:#e8f5e9,stroke:#388e3c,stroke-width:2px
+    classDef libraries fill:#fce4ec,stroke:#c2185b,stroke-width:2px
+
+    class RoboflowAPI,RTSPStream external
+    class DownloadScript,TrainingWorkflow,ConversionScript,EnvConfig development
+    class DirectInf,TimedRun,StreamInf,ContainerWorkflow,LocalInferenceServer edge
+    class PTModels,ONNXModels,TFLiteModels,SavedModel artifacts
+    class InferenceSDK,Supervision,OpenCV,TFLiteRuntime libraries

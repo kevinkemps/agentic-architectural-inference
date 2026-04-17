@@ -1,121 +1,123 @@
-## Identified Architectural Issues
+# Critic Agent V2: Falsification Report
 
-### 1. Identified Architectural Issues
-#### Issue 1: Missing Entry Point for `critic_review`
-- **Severity:** High
-- **Type:** Missing Evidence
-- **The Claim:** `critic_review` is an entrypoint for the `agents.py` module.
-- **The "Why":** The `critic_review` function is listed as an entrypoint in the `architecture_signals` section, but it is not explicitly shown in the candidate architecture diagram.
-- **Verification Request:** Add `critic_review` as an entrypoint in the candidate architecture diagram.
+---
 
-#### Issue 2: Overgeneralization of `propose_architecture`
-- **Severity:** Medium
-- **Type:** Overgeneralization
-- **The Claim:** `propose_architecture` is listed as an entrypoint, but it is not clear what specific components or relationships it proposes.
-- **The "Why":** The `propose_architecture` function is listed as an entrypoint, but the candidate architecture diagram does not specify the exact components or relationships it proposes.
-- **Verification Request:** Provide more detailed information on the components and relationships proposed by `propose_architecture`.
+## 1. Identified Architectural Issues
 
-#### Issue 3: Ambiguous Boundary Between `Pipeline` and `Agents`
-- **Severity:** Medium
-- **Type:** Ambiguous Boundary
-- **The Claim:** The relationship between `Pipeline` and `Agents` is not clearly defined.
-- **The "Why":** The `Pipeline` and `Agents` are shown as separate entities, but their interaction is not clearly defined.
-- **Verification Request:** Provide more details on the interactions between `Pipeline` and `Agents`.
+### Issue #1: Ambiguous Model Source for Local Inference Server
+**Severity:** High  
+**Type:** Missing Evidence + Ambiguous Boundary  
+**The Claim:** `LocalInferenceServer → RoboflowAPI` (confidence 0.85) with label "loads models from"  
+**The "Why":** The subsystem summary states `on_container.py` executes "workflow execution via local inference server" at `localhost:9001`, but does NOT provide evidence that this server fetches models from Roboflow at runtime. The summary mentions "roboflow: dataset download and model access" as a dependency, but this could refer to the *download script* only. The edge implies a runtime dependency that is not proven. The server could be loading pre-downloaded local models (TFLite, ONNX, or .pt files) instead.  
+**Verification Request:** Examine `on_container.py` and any server configuration files to determine:
+1. Does the inference server at `localhost:9001` make API calls to Roboflow during inference?
+2. Or does it load models from the local `tflite_models/` or `training/` directories?
+3. What is the actual model format consumed by this server?
 
-#### Issue 4: Missing `Repo Reader` Component
-- **Severity:** Low
-- **Type:** Missing Component
-- **The Claim:** The `Repo Reader` component is not explicitly shown in the candidate architecture.
-- **The "Why":** The `Repo Reader` component is listed as a dependency in the `architecture_signals` section, but it is not shown in the candidate architecture.
-- **Verification Request:** Add the `Repo Reader` component to the candidate architecture.
+---
 
-#### Issue 5: Missing `LLM` Component
-- **Severity:** Low
-- **Type:** Missing Component
-- **The Claim:** The `LLM` component is not explicitly shown in the candidate architecture.
-- **The "Why":** The `LLM` component is listed as a dependency in the `architecture_signals` section, but it is not shown in the candidate architecture.
-- **Verification Request:** Add the `LLM` component to the candidate architecture.
+### Issue #2: Unsubstantiated SavedModel Export Path
+**Severity:** Medium  
+**Type:** Overgeneralization + Missing Evidence  
+**The Claim:** `PTModels → SavedModel` (confidence 0.80) with label "exports to SavedModel"  
+**The "Why":** The only evidence for SavedModel format is the existence of `tflite_models/yolov8s_saved_model/metadata.yaml`. This does NOT prove that `.pt` models are converted to SavedModel format. The `metadata.yaml` could be a residual artifact from a TFLite conversion process (TFLite conversions often generate SavedModel intermediates). The subsystem summary does NOT mention any script or command that explicitly exports to SavedModel format. The conversion script is named `convert_to_tflite_simple.py`, suggesting TFLite is the target, not SavedModel.  
+**Verification Request:** 
+1. Inspect `convert_to_tflite_simple.py` to confirm whether it generates SavedModel as an intermediate or final output.
+2. Check if `metadata.yaml` is a byproduct of TFLite conversion or a standalone export.
+3. If SavedModel is not explicitly generated, remove this edge.
 
-#### Issue 6: Missing `Prompts` Component
-- **Severity:** Low
-- **Type:** Missing Component
-- **The Claim:** The `Prompts` component is not explicitly shown in the candidate architecture.
-- **The "Why":** The `Prompts` component is listed as a dependency in the `architecture_signals` section, but it is not shown in the candidate architecture.
-- **Verification Request:** Add the `Prompts` component to the candidate architecture.
+---
 
-#### Issue 7: Missing `MERMAID Renderer` Component
-- **Severity:** Low
-- **Type:** Missing Component
-- **The Claim:** The `MERMAID Renderer` component is not explicitly shown in the candidate architecture.
-- **The "Why":** The `MERMAID Renderer` component is listed as a dependency in the `architecture_signals` section, but it is not shown in the candidate architecture.
-- **Verification Request:** Add the `MERMAID Renderer` component to the candidate architecture.
+### Issue #3: Missing Mediator Between Training and Conversion
+**Severity:** Medium  
+**Type:** The "Missing Middle"  
+**The Claim:** `TrainingWorkflow → PTModels` (0.90) and `PTModels → ConversionScript` (0.88) imply a direct handoff.  
+**The "Why":** The subsystem summary lists `training/` as a side effect directory where "training artifacts" are written. This suggests that `.pt` models are not directly consumed by the conversion script, but rather stored in an intermediate location. The diagram does not show this storage layer. The `PTModels` node is labeled as "Pre-trained Models (.pt format)", but the summary also mentions "model artifacts: pre-trained .pt models" under `architecture_signals`, which could refer to *downloaded* models from Roboflow, not *trained* models. This creates ambiguity: are the `.pt` models being converted the same ones produced by training, or are they pre-trained models fetched from Roboflow?  
+**Verification Request:**
+1. Confirm whether `convert_to_tflite_simple.py` reads from `training/` or from a Roboflow-downloaded model directory.
+2. Clarify if `PTModels` represents locally trained models, downloaded models, or both.
+3. If there is a file system handoff (e.g., `training/best.pt` → `convert_to_tflite_simple.py`), make this explicit.
 
-### 2. Edge & Relationship Actions
+---
 
-#### Edge Actions
-- **Source:** `CLI`, **Target:** `Pipeline`
-- **Action:** Keep
-- **Reasoning:** This edge is clearly defined and necessary.
+### Issue #4: Contradictory Evidence for ONNX Export
+**Severity:** Low  
+**Type:** Missing Evidence  
+**The Claim:** `ConversionScript → ONNXModels` (confidence 0.85) with label "exports to ONNX"  
+**The "Why":** The conversion script is named `convert_to_tflite_simple.py`, which strongly suggests its sole purpose is TFLite conversion. The subsystem summary does NOT mention ONNX export anywhere in the script descriptions, entrypoints, or side effects. The only mention of ONNX is in the `model artifacts` list under `architecture_signals`, which could refer to models downloaded from Roboflow or exported via the `ultralytics` CLI (not the conversion script). The edge assumes the conversion script handles ONNX, but there is no evidence for this.  
+**Verification Request:**
+1. Inspect `convert_to_tflite_simple.py` to confirm if it exports to ONNX.
+2. If ONNX export is handled by the `ultralytics` CLI (e.g., `yolo export format=onnx`), create a separate edge from `TrainingWorkflow` to `ONNXModels`.
+3. If ONNX is not generated by any script, remove this edge.
 
-- **Source:** `Pipeline`, **Target:** `Agents`
-- **Action:** Keep
-- **Reasoning:** This edge is clearly defined and necessary.
+---
 
-- **Source:** `Pipeline`, **Target:** `Repo Reader`
-- **Action:** Keep
-- **Reasoning:** This edge is clearly defined and necessary.
+### Issue #5: Overgeneralized "Shared Libraries" Subgraph
+**Severity:** Low  
+**Type:** Ambiguous Boundary  
+**The Claim:** The `SharedLibraries` subgraph groups `InferenceSDK`, `Supervision`, `OpenCV`, and `TFLiteRuntime` as if they are architecturally equivalent.  
+**The "Why":** These libraries serve fundamentally different roles:
+- `InferenceSDK` is a **model execution engine** (core inference logic).
+- `Supervision` is a **post-processing utility** (visualization).
+- `OpenCV` is a **data I/O layer** (image/video handling).
+- `TFLiteRuntime` is a **model runtime** (TFLite-specific inference).
 
-- **Source:** `Pipeline`, **Target:** `LLM`
-- **Action:** Keep
-- **Reasoning:** This edge is clearly defined and necessary.
+Grouping them as "Shared Dependencies" obscures their architectural roles. For example, `TFLiteRuntime` is NOT used by `StreamInf` (which uses `InferenceSDK`), yet the diagram implies they are interchangeable. This is a category error.  
+**Verification Request:**
+1. Split the "Shared Libraries" subgraph into functional categories (e.g., "Inference Runtimes", "Visualization", "I/O").
+2. Remove edges that imply all scripts use all libraries (e.g., `StreamInf` does NOT use `TFLiteRuntime`).
 
-- **Source:** `Pipeline`, **Target:** `Prompts`
-- **Action:** Keep
-- **Reasoning:** This edge is clearly defined and necessary.
+---
 
-- **Source:** `Pipeline`, **Target:** `MERMAID Renderer`
-- **Action:** Keep
-- **Reasoning:** This edge is clearly defined and necessary.
+### Issue #6: Unverified Directionality of EnvConfig
+**Severity:** Low  
+**Type:** Wrong Direction (Potential)  
+**The Claim:** `EnvConfig → DownloadScript` (0.95) and `EnvConfig → StreamInf` (0.90) imply `.env` is a "provider" of credentials.  
+**The "Why":** The `.env` file is a **passive configuration artifact**, not an active component. The scripts *read* from `.env` using `dotenv`, but `.env` does not "provide" anything—it is consumed. The directionality should be reversed to show `DownloadScript → EnvConfig` (reads from) and `StreamInf → EnvConfig` (reads from). The current representation anthropomorphizes a static file.  
+**Verification Request:**
+1. Reverse the edge direction to reflect that scripts consume `.env`, not the other way around.
+2. Relabel edges as "reads credentials from" instead of "provides credentials".
 
-#### Relationship Actions
-- **Source:** `Agents`, **Target:** `summarize_file`
-- **Action:** Keep
-- **Reasoning:** This relationship is clearly defined and necessary.
+---
 
-- **Source:** `Agents`, **Target:** `partition_summaries`
-- **Action:** Keep
-- **Reasoning:** This relationship is clearly defined and necessary.
+## 2. Edge & Relationship Actions
 
-- **Source:** `Agents`, **Target:** `propose_architecture`
-- **Action:** Keep
-- **Reasoning:** This relationship is clearly defined and necessary.
+| Source | Target | Action | Confidence Delta | Reasoning |
+|--------|--------|--------|------------------|-----------|
+| `LocalInferenceServer` | `RoboflowAPI` | **Needs More Evidence** | -0.85 (remove until verified) | No proof the server calls Roboflow at runtime. Could be loading local models. |
+| `PTModels` | `SavedModel` | **Needs More Evidence** | -0.80 (remove until verified) | `metadata.yaml` is not proof of SavedModel export. Likely a TFLite conversion artifact. |
+| `ConversionScript` | `ONNXModels` | **Remove** | -0.85 | Script is named `convert_to_tflite_simple.py`. No evidence it handles ONNX. |
+| `EnvConfig` | `DownloadScript` | **Reverse Direction** | 0.0 (keep confidence, flip edge) | Scripts read from `.env`, not the reverse. |
+| `EnvConfig` | `StreamInf` | **Reverse Direction** | 0.0 (keep confidence, flip edge) | Same as above. |
+| `StreamInf` | `TFLiteRuntime` | **Remove** | N/A | `StreamInf` uses `InferenceSDK`, not `TFLiteRuntime`. No evidence of TFLite usage in streaming. |
 
-- **Source:** `Agents`, **Target:** `critic_review`
-- **Action:** Keep
-- **Reasoning:** This relationship is clearly defined and necessary.
+---
 
-- **Source:** `Agents`, **Target:** `revise_architecture`
-- **Action:** Keep
-- **Reasoning:** This relationship is clearly defined and necessary.
+## 3. Missing or Hidden Components
 
-### 3. Missing or Hidden Components
+### Missing Component #1: File System Storage Layer
+**Label:** `TrainingArtifactsDirectory` (e.g., `training/` or `tflite_models/`)  
+**Reason:** The subsystem summary explicitly mentions "writes files: training artifacts to `training/` directory" and "writes files: saves converted models to `tflite_models/` directory". These are not shown as nodes. The diagram jumps from `TrainingWorkflow` to `PTModels` without showing where the `.pt` files are written. This is a critical omission because it obscures the handoff mechanism between training and conversion.
 
-#### Missing Component: `Repo Reader`
-- **Label:** `Repo Reader`
-- **Reason:** The `Repo Reader` component is listed as a dependency but not shown in the candidate architecture.
+### Missing Component #2: Roboflow Model Hosting (Distinct from API)
+**Label:** `RoboflowModelRegistry`  
+**Reason:** The subsystem summary mentions "model artifacts: pre-trained .pt models" under `architecture_signals`, and `on_container.py` is described as using "model access" via Roboflow. This suggests Roboflow hosts pre-trained models separately from the dataset download API. The current diagram conflates dataset download and model hosting into a single `RoboflowAPI` node, which may be inaccurate.
 
-#### Missing Component: `LLM`
-- **Label:** `LLM`
-- **Reason:** The `LLM` component is listed as a dependency but not shown in the candidate architecture.
+---
 
-#### Missing Component: `Prompts`
-- **Label:** `Prompts`
-- **Reason:** The `Prompts` component is listed as a dependency but not shown in the candidate architecture.
+## 4. Critic's Summary
 
-#### Missing Component: `MERMAID Renderer`
-- **Label:** `MERMAID Renderer`
-- **Reason:** The `MERMAID Renderer` component is listed as a dependency but not shown in the candidate architecture.
+The proposed architecture demonstrates **moderate structural integrity** but suffers from **evidentiary gaps** and **categorical conflation**. The most critical issues are:
 
-### 4. Critic’s Summary
+1. **Unverified Runtime Dependencies:** The `LocalInferenceServer → RoboflowAPI` edge is speculative and could misrepresent the deployment model.
+2. **Artifact Confusion:** The diagram does not distinguish between *downloaded* pre-trained models and *locally trained* models, leading to ambiguous edges (e.g., `PTModels → ConversionScript`).
+3. **Directional Errors:** Configuration files are incorrectly modeled as active providers rather than passive resources.
+4. **Library Overgeneralization:** Grouping inference runtimes, visualization tools, and I/O libraries into a single "Shared Dependencies" category obscures their distinct architectural roles.
 
-The candidate architecture is a step in the right direction but lacks clarity and completeness. The inclusion of `critic_review` as an entrypoint is a significant improvement, but the architecture still needs more detail to accurately represent the system. The candidate architecture should be refined to include all dependencies and their interactions, ensuring that each component and relationship is clearly defined and supported by evidence. The overall health of the architecture is moderate, with some areas needing more precision and detail.
+**Recommendation:** Before accepting this architecture, the system must:
+- Verify the model source for `LocalInferenceServer` (local vs. remote).
+- Confirm whether `convert_to_tflite_simple.py` generates SavedModel or ONNX outputs.
+- Reverse the directionality of `.env` consumption edges.
+- Split the "Shared Libraries" subgraph into functional categories.
+
+**Current Confidence in Architecture:** **0.68** (down from implied 0.85-0.92 range). The architecture is **not yet falsifiable** due to missing evidence for key runtime behaviors.
