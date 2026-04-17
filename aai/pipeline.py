@@ -145,18 +145,6 @@ def run_pipeline(
             break
 
     # ------------------------------------------------------------------
-    # Optional: Stage Designer – Critique Strategy Evolution
-    # ------------------------------------------------------------------
-    if enable_designer and eval_questions_path:
-        _log("Stage Designer – Analyzing critique patterns for strategy evolution", started, verbose)
-        designer = DesignerAgent(output_dir=output_dir)
-        proposals = designer.design(llm)
-        if proposals:
-            _log("  Designer generated prompt refinement proposals", started, verbose)
-        else:
-            _log("  Designer: insufficient failures for refinement", started, verbose)
-
-    # ------------------------------------------------------------------
     # Stage 6 – Visual / Renderer
     # ------------------------------------------------------------------
     _log("Stage 6 – Rendering Mermaid diagrams to PNG", started, verbose)

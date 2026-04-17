@@ -52,19 +52,6 @@ def parse_args() -> argparse.Namespace:
         help="Number of critique → revision cycles (default: 1)",
     )
 
-    # --- Evaluation & Designer (experimental) ---
-    parser.add_argument(
-        "--eval-questions-path",
-        default=None,
-        help="Optional path to evaluation questions markdown file for critique feedback",
-    )
-
-    parser.add_argument(
-        "--enable-designer",
-        action="store_true",
-        help="Enable DesignerAgent to propose critique strategy refinements (requires --eval-questions-path)",
-    )
-
     # --- Optional reference architecture ---
     parser.add_argument(
         "--arch-md-path",
@@ -93,8 +80,6 @@ def main() -> None:
             architect_threshold=args.architect_threshold,
             critic_rounds=args.critic_rounds,
             verbose=not args.quiet,
-            eval_questions_path=args.eval_questions_path,
-            enable_designer=args.enable_designer,
         )
         print(f"\nOutput directory: {out_path}")
         print(f"  Draft diagram  : {out_path / '03_draft' / 'mermaid.md'}")
