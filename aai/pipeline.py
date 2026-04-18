@@ -12,8 +12,9 @@ Runs the full staged analysis:
 from __future__ import annotations
 import time
 import re
+import shutil
 from pathlib import Path
-from lib.agents import STAGES, ArchitectAgent, ContextManager, CritiqueAgent, CritiqueEvaluator, DesignerAgent, FileSummarizer
+from lib.agents import STAGES, ArchitectAgent, ContextManager, CritiqueAgent, FileSummarizer
 from lib.llm import get_model
 from lib.mermaid_renderer import render_mermaid_file
 
@@ -23,6 +24,15 @@ def _log(message: str, start: float, verbose: bool) -> None:
         return
     elapsed = time.perf_counter() - start
     print(f"[{elapsed:7.2f}s] {message}")
+
+
+def _clean_output_directories(output_dir: Path) -> None:
+    """Remove any existing stage outputs before starting a new run."""
+    for stage in STAGES:
+        stage_dir = output_dir / stage
+        if stage_dir.exists():
+            shutil.rmtree(stage_dir)
+        stage_dir.mkdir(parents=True, exist_ok=True)
 
 
 def run_pipeline(
@@ -43,7 +53,7 @@ def run_pipeline(
     repo_path:
         Path to the repository to analyse.
     out_dir:
-        Root output directory.  Stage sub-directories are created automatically.
+        Root output directory.  Stage sub-directories are cleared and recreated automatically.
     arch_md_path:
         Optional path to an external reference architecture ``.md`` file.
     max_chars_per_chunk:
@@ -67,9 +77,8 @@ def run_pipeline(
     started = time.perf_counter()
     output_dir = Path(out_dir)
 
-    # Ensure all stage directories exist up front
-    for stage in STAGES:
-        (output_dir / stage).mkdir(parents=True, exist_ok=True)
+    # Clean and recreate all stage directories up front.
+    _clean_output_directories(output_dir)
 
     _log(f"Starting pipeline | repo={repo_path}", started, verbose)
 
@@ -130,13 +139,6 @@ def run_pipeline(
         if critique is None:
             _log("  CritiqueAgent returned no output – skipping revision.", started, verbose)
             break
-
-        # Optionally evaluate critique quality
-        if eval_questions_path:
-            _log(f"  Evaluating critique quality", started, verbose)
-            evaluator = CritiqueEvaluator(output_dir=output_dir)
-            evaluator.load_eval_questions(eval_questions_path)
-            feedback = evaluator.evaluate()
 
         _log(f"Stage 5 – ArchitectAgent (revision round {round_idx}/{critic_rounds})", started, verbose)
         diagram = architect.revise(llm, arch_md_path=arch_md_path)

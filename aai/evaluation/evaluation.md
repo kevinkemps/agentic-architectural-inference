@@ -2,105 +2,104 @@
 
 ## 1
 - Question: What is the overall purpose of the repository?
-- Answer: The diagram indicates a computer-vision workflow that downloads a dataset, trains YOLO models, converts models to TFLite, and runs inference workflows (including RTSP stream processing) in an edge deployment environment.
-- Evidence: `aai/output_analysis/06_visual/mermaid_refined.mmd` shows flow `download_dataset.py -> DatasetDir -> YOLO Training -> training/ -> convert_to_tflite_simple.py -> tflite_models/`, plus Jetson inference nodes (`direct_inf.py`, `timed_run.py`, `stream_inf.py`, `on_container.py`).
+- Answer: The diagram shows a computer-vision workflow that downloads data from Roboflow, supports a model-training and TFLite-conversion path, and runs inference across Jetson and Rubik Pi deployment targets.
+- Evidence: `aai/output_analysis/06_visual/mermaid_refined.mmd` includes the Development Environment, Jetson Edge Deployment, Rubik Pi Offline Runtime, and External Dependencies subgraphs, plus edges from `download_dataset.py` to `Roboflow API`, from the unverified training/conversion nodes to `TFLite Model`, and from the inference scripts to runtime dependencies.
 - Source Type: Diagram
 - Confidence: High
-- Notes: Purpose is constrained to what is explicitly represented in the Mermaid nodes/edges.
+- Notes: The diagram supports a repository purpose centered on vision model preparation and deployment, but not a more detailed product goal.
 
 ## 2
 - Question: What is the entry point for this repository?
 - Answer: I don't know based on the provided evidence.
-- Evidence: `aai/output_analysis/06_visual/mermaid_refined.mmd` lists multiple scripts/workflows but does not mark a single entrypoint.
+- Evidence: `aai/output_analysis/06_visual/mermaid_refined.mmd` shows multiple scripts and workflows, but no single repository entrypoint.
 - Source Type: Diagram
 - Confidence: Low
-- Notes: Needed evidence would be CLI docs, a main script, or run instructions tied to one primary start command.
+- Notes: A startup command, CLI, or main script would be needed to answer this.
 
 ## 3
 - Question: What is the execution flow?
-- Answer: The diagram shows two main flows:
-  1. Development flow: `download_dataset.py` reads `.env`, pulls dataset from Roboflow API, writes dataset directory; YOLO training reads dataset and writes `.pt` artifacts; conversion script reads training artifacts and writes `.tflite` models.
-  2. Edge inference flow: `stream_inf.py` reads RTSP URL from `.env`, connects to RTSP stream, uses inference-sdk, supervision, and OpenCV; `direct_inf.py` and `timed_run.py` read `.tflite` models, use `tflite_runtime`, and use OpenCV (plus supervision for direct inference); `on_container.py` sends requests to a local inference server.
-- Evidence: `aai/output_analysis/06_visual/mermaid_refined.mmd` edges among nodes in Development, Edge Deployment, Storage, Inference Runtimes, Visualization, and I/O Layer subgraphs.
+- Answer: The diagram shows three connected flows. First, `EnvConfig` feeds `DownloadDataset`, which reaches the `Roboflow API`; then an unverified `TrainingPipeline` feeds an unverified `ConversionService`, which feeds `TFLite Model`. Second, on Jetson, `EnvConfig` feeds `direct_inf.py`, `timed_run.py`, and `stream_inf.py`; those scripts integrate with `Roboflow API`, and `stream_inf.py` also connects to `RTSP Camera Stream`. Third, `on_container.py` sends HTTP requests to `Local Inference Server`, which is itself shown as an unverified deployment that may proxy to `Roboflow API`. Finally, `run_rtsp_tflite.py` loads `TFLite Model` and reads `RTSP Camera Stream`.
+- Evidence: `aai/output_analysis/06_visual/mermaid_refined.mmd` edges from `EnvConfig`, `DownloadDataset`, `TrainingPipeline`, `ConversionService`, `DirectInf`, `TimedRun`, `StreamInf`, `ContainerInf`, and `RTSPTFLite`.
 - Source Type: Diagram
 - Confidence: High
-- Notes: Server model source is explicitly flagged as unknown in the diagram.
+- Notes: The training and local inference server paths are explicitly marked unverified in the diagram.
 
 ## 4
 - Question: What data sources and sinks exist in this program?
-- Answer: Sources shown are Roboflow API, RTSP camera stream, and `.env` configuration. Sinks shown are dataset storage (`paraglider_recognition-8/`), training artifacts (`training/`), model storage (`tflite_models/`), and requests to the local inference server (`localhost:9001`).
-- Evidence: `aai/output_analysis/06_visual/mermaid_refined.mmd` subgraphs `External Services`, `File System Storage`, and edges from scripts into storage/server nodes.
+- Answer: The explicit data sources are `Roboflow API`, `RTSP Camera Stream`, and `EnvConfig` as a configuration input. The explicit sinks or downstream targets are `DownloadDataset`, `TrainingPipeline`, `ConversionService`, `direct_inf.py`, `timed_run.py`, `stream_inf.py`, `on_container.py`, `run_rtsp_tflite.py`, `TFLite Model`, and `Local Inference Server`, depending on the edge being followed.
+- Evidence: `aai/output_analysis/06_visual/mermaid_refined.mmd` shows incoming edges from `EnvConfig`, `Roboflow API`, and `RTSP Camera Stream`, and outgoing edges into `TFLite Model` and `Local Inference Server`.
 - Source Type: Diagram
-- Confidence: High
-- Notes: The diagram does not enumerate all file-level outputs (for example, logs or metrics).
+- Confidence: Medium
+- Notes: The diagram does not show file-system directories or other persistence layers as explicit sinks, so I am not claiming them here.
 
 ## 5
 - Question: Based on the complexity of the functions and the number of dependencies, which parts of this codebase are likely the most fragile or difficult to test?
-- Answer: I don't know based on the provided evidence for function-level complexity. Based only on dependency fan-out in the diagram, likely higher-risk areas are `stream_inf.py` (depends on env config, network stream, inference-sdk, visualization, OpenCV) and `on_container.py` + `Local Inference Server` (network/service dependency with unknown model source).
-- Evidence: `aai/output_analysis/06_visual/mermaid_refined.mmd` shows multiple external/runtime dependencies and an explicit `Needs Verification` node for local server model source.
+- Answer: I don't know based on the provided evidence about function-level complexity. Based only on the diagram, the most fragile areas are likely the unverified nodes and high-dependency integration points: `TrainingPipeline`, `ConversionService`, `stream_inf.py`, `on_container.py`, and `Local Inference Server`.
+- Evidence: `aai/output_analysis/06_visual/mermaid_refined.mmd` marks `TrainingPipeline`, `ConversionService`, and `Local Inference Server` as unverified and shows several external dependencies around `stream_inf.py` and `on_container.py`.
 - Source Type: Diagram
 - Confidence: Medium
-- Notes: Needed evidence would be code complexity metrics, tests, and failure-handling paths.
+- Notes: Code complexity, tests, and error handling are not shown in the diagram.
 
 ## 6
 - Question: What architectural design patterns are most prevalent in this project?
-- Answer: The most evident patterns are a staged pipeline (dataset download -> training -> conversion -> deployment inference), file-system handoff between stages, and integration of external services/runtimes via script-level orchestration.
-- Evidence: `aai/output_analysis/06_visual/mermaid_refined.mmd` sequential edges across Development/Storage/Edge subgraphs and runtime integration edges.
+- Answer: The diagram most clearly shows a staged pipeline, environment-driven configuration, and external-service integration. It also shows a client-server boundary for the HTTP demo and a separate offline runtime that consumes a saved model and a camera stream.
+- Evidence: `aai/output_analysis/06_visual/mermaid_refined.mmd` shows sequential stage-like edges across the Development section, the explicit `EnvConfig` node feeding multiple scripts, `ContainerInf -> LocalInfServer`, and `RTSPTFLite -> TFLite Model` plus `RTSP Camera Stream`.
 - Source Type: Diagram
 - Confidence: Medium
-- Notes: Pattern naming is inferred from explicit flow structure only; no code-level framework usage is provided.
+- Notes: These are pattern descriptions inferred directly from the flow structure only.
 
 ## 7
 - Question: What systems is this code base run on?
-- Answer: The diagram explicitly identifies `Development Environment (macOS)` and `Edge Deployment (Jetson)`.
+- Answer: The diagram explicitly names three runtime systems: `Development Environment (macOS)`, `Jetson Edge Deployment`, and `Rubik Pi Offline Runtime`.
 - Evidence: `aai/output_analysis/06_visual/mermaid_refined.mmd` subgraph titles.
 - Source Type: Diagram
 - Confidence: High
-- Notes: No additional operating systems are shown in this artifact.
+- Notes: No other runtime systems are shown in the artifact.
 
 ## 8
 - Question: What are system specific pieces of the code?
-- Answer: For macOS/development: `download_dataset.py`, YOLO training workflow, `convert_to_tflite_simple.py`, `.env` configuration. For Jetson/edge: `direct_inf.py`, `timed_run.py`, `stream_inf.py`, `on_container.py`, and local inference server usage.
-- Evidence: `aai/output_analysis/06_visual/mermaid_refined.mmd` nodes grouped under `Development Environment (macOS)` and `Edge Deployment (Jetson)`.
+- Answer: On macOS, the diagram places `download_dataset.py`, `.env Configuration`, `TrainingPipeline`, and `ConversionService` in the Development Environment. On Jetson, it places `direct_inf.py`, `timed_run.py`, `stream_inf.py`, and `on_container.py` in the Jetson Edge Deployment. On Rubik Pi, it places `run_rtsp_tflite.py`, `TFLite Model`, and `metadata.yaml` in the Rubik Pi Offline Runtime.
+- Evidence: `aai/output_analysis/06_visual/mermaid_refined.mmd` subgraph membership and node labels.
 - Source Type: Diagram
 - Confidence: High
-- Notes: System specificity is based on grouping labels, not explicit platform checks in code.
+- Notes: The platform labels come from the diagram groups, not from code-level platform checks.
 
 ## 9
 - Question: What are the necessary parts of the code to train the models?
-- Answer: The training path in the diagram requires dataset download (`download_dataset.py` with `.env` and Roboflow API), dataset storage (`paraglider_recognition-8/`), and YOLO training to produce artifacts in `training/`.
-- Evidence: `aai/output_analysis/06_visual/mermaid_refined.mmd` edges: `DownloadScript -> EnvConfig`, `DownloadScript -> RoboflowAPI`, `DownloadScript -> DatasetDir`, `TrainingWorkflow -> DatasetDir`, `TrainingWorkflow -> TrainingArtifactsDir`.
+- Answer: The diagram shows the training path beginning with `EnvConfig` and `download_dataset.py`, which reach `Roboflow API`, then an unverified `TrainingPipeline`. I do not know from the provided evidence what code inside `TrainingPipeline` is necessary, but the diagram indicates that dataset acquisition and the training stage itself are the required parts shown for training.
+- Evidence: `aai/output_analysis/06_visual/mermaid_refined.mmd` edges `EnvConfig -> DownloadDataset`, `DownloadDataset -> Roboflow API`, and `DownloadDataset -.-> TrainingPipeline`.
 - Source Type: Diagram
-- Confidence: High
-- Notes: Conversion to TFLite appears post-training, not strictly required to train.
+- Confidence: Medium
+- Notes: The diagram does not expose the training implementation details or any dataset schema.
 
 ## 10
 - Question: Where do the images come from?
-- Answer: The diagram shows two image/data origins: training data downloaded from Roboflow API into the dataset directory, and live frames from an RTSP camera stream for streaming inference.
-- Evidence: `aai/output_analysis/06_visual/mermaid_refined.mmd` edges `DownloadScript -> RoboflowAPI -> DatasetDir` and `StreamInf -> RTSPStream`.
+- Answer: The images shown in the diagram come from `Roboflow API` for the dataset-download path and from `RTSP Camera Stream` for the streaming/offline runtime paths.
+- Evidence: `aai/output_analysis/06_visual/mermaid_refined.mmd` edges `DownloadDataset -> Roboflow API` and `StreamInf -> RTSP Camera Stream` / `RTSPTFLite -> RTSP Camera Stream`.
 - Source Type: Diagram
 - Confidence: High
-- Notes: The artifact does not identify any additional image sources.
+- Notes: No other image sources are shown.
 
 ## Additional Questions a New Engineer Might Ask
-- What exact command sequence runs each stage end-to-end on macOS and on Jetson?
-- What contract (input/output schema) exists between each script and storage directory?
-- How is the local inference server configured and where does it load models from?
-- What are the expected performance/latency targets for `stream_inf.py` and `timed_run.py`?
-- What failure and retry behavior exists for Roboflow API and RTSP connectivity?
+- What exact command sequence runs each stage end-to-end on macOS, Jetson, and Rubik Pi?
+- What configuration values are expected in `.env`, and which scripts require them?
+- Where does `Local Inference Server` get its model from?
+- What output artifacts are produced by `TrainingPipeline` and `ConversionService`?
+- What failure behavior exists for `Roboflow API` and `RTSP Camera Stream` connectivity?
 
 ## Questions a New Engineer Likely Would Not Ask Yet
-- How should we redesign this into event-driven orchestration?
-- Should we replace current runtimes with alternate inference backends?
-- What long-term multi-device fleet management strategy should be adopted?
+- How should this be restructured into a different orchestration framework?
+- Should the edge deployments be collapsed into one runtime?
+- What long-term fleet-management system should replace the current scripts?
 
 ## Missing Evidence Checklist
-- A designated repository entrypoint (single start command/script).
-- Function-level complexity, test coverage, and known flaky areas.
-- Definitive model source for local inference server (explicitly marked unknown).
-- Runtime configuration details (environment variables, required services, startup ordering).
-- Error handling, observability, and operational runbooks.
+- A single, explicit repository entrypoint.
+- Implementation details for the unverified training and TFLite conversion stages.
+- The model source and deployment mechanics for `Local Inference Server`.
+- Runtime startup instructions and required environment variables.
+- Test coverage, error handling, and operational runbooks.
 
 ## Files Read
 - `aai/evaluation/eval_questions.md`
+- `aai/evaluation/evaluation.md`
 - `aai/output_analysis/06_visual/mermaid_refined.mmd`

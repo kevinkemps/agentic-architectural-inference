@@ -15,10 +15,6 @@ Pipeline stages:
 5. ArchitectAgent refine (05_refined): revises the draft using critique feedback.
 6. Renderer (06_visual): extracts Mermaid source and attempts PNG/SVG rendering.
 
-Optional post-critique features:
-- CritiqueEvaluator: scores critique quality and writes feedback metrics.
-- DesignerAgent: analyzes repeated critique failures and proposes prompt refinements.
-
 ## Project Layout
 
 ```text
@@ -102,7 +98,7 @@ python3 -m cli --repo-path /path/to/repo
 Useful options:
 
 ```bash
-# Output root (default: output_analysis)
+# Output root (default: output_analysis; stage outputs are cleared before each run)
 python3 -m cli --out-dir output_analysis
 
 # Chunk and context controls
@@ -115,16 +111,10 @@ python3 -m cli --critic-rounds 3
 # Optional external architecture reference
 python3 -m cli --arch-md-path /path/to/reference_architecture.md
 
-# Optional critique evaluation
-python3 -m cli --eval-questions-path ../aai/evaluation/eval_questions.md
-
-# Optional designer (requires --eval-questions-path)
-python3 -m cli --eval-questions-path ../aai/evaluation/eval_questions.md --enable-designer
-```
 
 ## Output Structure
 
-By default, each run writes to aai/output_analysis/ with stage directories:
+By default, each run clears and then rewrites aai/output_analysis/ with stage directories:
 
 ```text
 output_analysis/
@@ -136,9 +126,9 @@ output_analysis/
     mermaid.md
   04_critique/
     critique.md
-    feedback.json             # when --eval-questions-path is used
-    designer_proposals.md     # when --enable-designer is used
-    evolution_history.json    # when --enable-designer is used
+    feedback.json             # evaluation feedback output
+    designer_proposals.md     # designer proposal output
+    evolution_history.json    # designer version history
   05_refined/
     mermaid.md
   06_visual/
@@ -148,19 +138,18 @@ output_analysis/
     mermaid_refined.svg|png   # when Mermaid rendering succeeds
 ```
 
-## Evaluation Runner
+## Onboarding Evaluation
 
-You can run evaluation metrics after a pipeline run:
+The repository also includes a Copilot agent to help evaluate the block diagram output: [`.github/agents/evaluation-onboarding.agent.md`].
 
-```bash
-cd aai
-python3 -m eval_runner --out-dir output_analysis --eval-questions ../aai/evaluation/eval_questions.md
-```
+### Instructions on use
+In Copilot Chat, pick the Evaluator agent. Enter "run evaluation". It should read only [aai/output_analysis/06_visual/mermaid_refined.mmd] agentic_architectural_inference/aai/output_analysis/06_visual/mermaid_refined.mmd), answer the questions in [aai/evaluation/eval_questions.md], and write its report to [aai/evaluation/evaluation.md].
 
-This writes:
-- output_analysis/evaluation/metrics_summary.md
+To change the onboarding questions, edit [aai/evaluation/eval_questions.md]. You can add new questions there or replace the existing ones to match the evaluation you want the agent to perform.
+
 
 ## Notes
 
 - Prompts are loaded at runtime from prompts/*.md via aai/lib/prompts.py.
+- The onboarding evaluator is separate from the main pipeline output under aai/output_analysis/.
 - Mermaid rendering requires mmdc (Mermaid CLI). If Chromium is missing, the renderer attempts a Playwright install and retries.

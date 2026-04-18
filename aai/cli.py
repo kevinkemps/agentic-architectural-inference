@@ -23,7 +23,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--out-dir",
         default="output_analysis",
-        help="Root output directory; stage sub-dirs are created automatically (default: output_analysis)",
+        help="Root output directory; stage sub-dirs are cleared and recreated automatically (default: output_analysis)",
     )
 
     # --- Chunking / context ---

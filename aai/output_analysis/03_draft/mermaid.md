@@ -1,18 +1,21 @@
 # Reconciliation Summary
 
-Based on the provided file summaries, I have constructed an initial architecture diagram for the paragliding recognition system. The evidence supports a clear separation between:
+Based on the provided file summaries, I have constructed an evidence-based architecture diagram for the paragliding recognition system. The system exhibits a clear multi-platform deployment pattern with three distinct runtime environments:
 
-1. **Development/Training Environment** (macOS-based)
-2. **Edge Deployment Environment** (Jetson-based)
-3. **External Services** (Roboflow API, RTSP streams)
-4. **Model Artifacts Pipeline** (training → conversion → deployment)
+1. **Development Environment (macOS)**: Dataset acquisition and model training
+2. **Jetson Edge Deployment**: Online inference with Roboflow API integration
+3. **Rubik Pi Offline Runtime**: Fully local TFLite inference without external dependencies
 
-All components and edges are directly traceable to the file summaries. Confidence scores reflect the explicitness of the evidence:
-- **High confidence (0.9-0.95)**: Explicit imports, documented workflows, clear file purposes
-- **Medium confidence (0.75-0.85)**: Inferred from architecture signals and dependencies
-- **Lower confidence (0.7)**: Logical connections not explicitly documented but strongly implied
+**Key Architectural Findings:**
+- **Data Pipeline**: `download_dataset.py` integrates with Roboflow API for dataset acquisition
+- **Jetson Runtime**: Four distinct inference patterns (direct, timed, container-based, streaming)
+- **Rubik Pi Runtime**: Completely offline RTSP processing with local TFLite models
+- **Model Artifacts**: TFLite model metadata indicates COCO-80 pre-trained weights
 
-No speculative components have been added. The diagram represents only what is evidenced in the summaries.
+**Confidence Rationale:**
+- High confidence (0.9-0.95) for components with explicit code evidence
+- Moderate confidence (0.85) for inferred relationships based on shared dependencies
+- All edges are supported by explicit imports, API calls, or documented workflows
 
 ---
 
@@ -20,102 +23,86 @@ No speculative components have been added. The diagram represents only what is e
 
 ```mermaid
 graph TB
-    subgraph External["External Services"]
-        RoboflowAPI["Roboflow API<br/>(Dataset & Models)"]
-        RTSPStream["RTSP Camera Stream"]
-    end
-
     subgraph Development["Development Environment (macOS)"]
-        DownloadScript["download_dataset.py<br/>(Dataset Download)"]
-        TrainingWorkflow["YOLO Training<br/>(ultralytics CLI)"]
-        ConversionScript["convert_to_tflite_simple.py<br/>(Model Conversion)"]
-        EnvConfig[".env Configuration<br/>(API Keys)"]
+        DownloadDataset["download_dataset.py<br/>Dataset Acquisition"]
+        RoboflowAPI["Roboflow API<br/>External Service"]
+        EnvConfig[".env Configuration<br/>API Keys"]
     end
 
-    subgraph EdgeDeployment["Edge Deployment (Jetson)"]
-        DirectInf["direct_inf.py<br/>(Single Image)"]
-        TimedRun["timed_run.py<br/>(Benchmarking)"]
-        StreamInf["stream_inf.py<br/>(RTSP Processing)"]
-        ContainerWorkflow["on_container.py<br/>(Server Workflow)"]
-        LocalInferenceServer["Local Inference Server<br/>(localhost:9001)"]
+    subgraph JetsonRuntime["Jetson Edge Deployment"]
+        DirectInf["direct_inf.py<br/>Single Image Inference"]
+        TimedRun["timed_run.py<br/>Performance Benchmark"]
+        StreamInf["stream_inf.py<br/>RTSP Stream Processing"]
+        ContainerInf["on_container.py<br/>Workflow Orchestration"]
+        LocalInfServer["Inference Server<br/>localhost:9001"]
     end
 
-    subgraph ModelArtifacts["Model Artifacts"]
-        PTModels["Pre-trained Models<br/>(.pt format)"]
-        ONNXModels["ONNX Exports<br/>(.onnx format)"]
-        TFLiteModels["TFLite Models<br/>(.tflite format)"]
-        SavedModel["TensorFlow SavedModel<br/>(metadata.yaml)"]
+    subgraph RubikPiRuntime["Rubik Pi Offline Runtime"]
+        RTSPTFLite["run_rtsp_tflite.py<br/>Offline RTSP Processor"]
+        TFLiteModel["TFLite Model<br/>yolov8s_saved_model"]
+        ModelMetadata["metadata.yaml<br/>Model Config"]
     end
 
-    subgraph SharedLibraries["Shared Dependencies"]
-        InferenceSDK["inference / inference-sdk<br/>(Model Loading)"]
-        Supervision["supervision<br/>(Visualization)"]
-        OpenCV["opencv-python<br/>(Image/Video Processing)"]
-        TFLiteRuntime["tflite_runtime<br/>(TFLite Inference)"]
+    subgraph ExternalSources["External Data Sources"]
+        RTSPCamera["RTSP Camera Stream"]
     end
 
-    %% Development Workflow
-    EnvConfig -->|"provides credentials<br/>[0.95]"| DownloadScript
-    DownloadScript -->|"downloads dataset<br/>[0.92]"| RoboflowAPI
-    DownloadScript -->|"writes to paraglider_recognition-8/<br/>[0.92]"| TrainingWorkflow
-    TrainingWorkflow -->|"produces .pt models<br/>[0.90]"| PTModels
-    PTModels -->|"input for conversion<br/>[0.88]"| ConversionScript
-    ConversionScript -->|"exports to TFLite<br/>[0.85]"| TFLiteModels
-    ConversionScript -->|"exports to ONNX<br/>[0.85]"| ONNXModels
-    PTModels -->|"exports to SavedModel<br/>[0.80]"| SavedModel
+    %% Development Pipeline
+    EnvConfig -->|"API Key (0.95)"| DownloadDataset
+    DownloadDataset -->|"Dataset Download (0.95)"| RoboflowAPI
 
-    %% Edge Deployment Workflows
-    EnvConfig -->|"provides RTSP_URL<br/>[0.90]"| StreamInf
-    TFLiteModels -->|"loaded for inference<br/>[0.90]"| DirectInf
-    TFLiteModels -->|"loaded for benchmarking<br/>[0.90]"| TimedRun
+    %% Jetson Dependencies
+    EnvConfig -->|"API Key (0.9)"| DirectInf
+    EnvConfig -->|"API Key (0.9)"| TimedRun
+    EnvConfig -->|"API Key + RTSP URL (0.95)"| StreamInf
     
-    StreamInf -->|"connects to stream<br/>[0.88]"| RTSPStream
-    StreamInf -->|"uses InferencePipeline<br/>[0.92]"| InferenceSDK
+    DirectInf -->|"Model Loading (0.9)"| RoboflowAPI
+    TimedRun -->|"Model Inference (0.9)"| RoboflowAPI
+    StreamInf -->|"Model Loading (0.95)"| RoboflowAPI
+    StreamInf -->|"Video Stream (0.95)"| RTSPCamera
     
-    ContainerWorkflow -->|"sends requests<br/>[0.95]"| LocalInferenceServer
-    LocalInferenceServer -->|"loads models from<br/>[0.85]"| RoboflowAPI
-    
-    DirectInf -->|"uses for inference<br/>[0.90]"| TFLiteRuntime
-    TimedRun -->|"uses for inference<br/>[0.90]"| TFLiteRuntime
-    
-    %% Shared Library Usage
-    DirectInf -->|"uses for visualization<br/>[0.88]"| Supervision
-    StreamInf -->|"uses for visualization<br/>[0.88]"| Supervision
-    DirectInf -->|"uses for image I/O<br/>[0.92]"| OpenCV
-    StreamInf -->|"uses for video processing<br/>[0.92]"| OpenCV
-    TimedRun -->|"uses for image I/O<br/>[0.92]"| OpenCV
+    ContainerInf -->|"HTTP Client (0.85)"| LocalInfServer
+    LocalInfServer -->|"Workflow Execution (0.8)"| RoboflowAPI
+
+    %% Rubik Pi Offline Pipeline
+    RTSPTFLite -->|"Model Loading (0.95)"| TFLiteModel
+    RTSPTFLite -->|"Video Stream (0.95)"| RTSPCamera
+    TFLiteModel -->|"Metadata Reference (0.9)"| ModelMetadata
 
     %% Styling
-    classDef external fill:#e1f5ff,stroke:#0288d1,stroke-width:2px
-    classDef development fill:#fff3e0,stroke:#f57c00,stroke-width:2px
-    classDef edge fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px
-    classDef artifacts fill:#e8f5e9,stroke:#388e3c,stroke-width:2px
-    classDef libraries fill:#fce4ec,stroke:#c2185b,stroke-width:2px
-
-    class RoboflowAPI,RTSPStream external
-    class DownloadScript,TrainingWorkflow,ConversionScript,EnvConfig development
-    class DirectInf,TimedRun,StreamInf,ContainerWorkflow,LocalInferenceServer edge
-    class PTModels,ONNXModels,TFLiteModels,SavedModel artifacts
-    class InferenceSDK,Supervision,OpenCV,TFLiteRuntime libraries
+    classDef development fill:#e1f5ff,stroke:#01579b,stroke-width:2px
+    classDef jetson fill:#fff3e0,stroke:#e65100,stroke-width:2px
+    classDef rubikpi fill:#f3e5f5,stroke:#4a148c,stroke-width:2px
+    classDef external fill:#e8f5e9,stroke:#1b5e20,stroke-width:2px
+    
+    class DownloadDataset,EnvConfig development
+    class DirectInf,TimedRun,StreamInf,ContainerInf,LocalInfServer jetson
+    class RTSPTFLite,TFLiteModel,ModelMetadata rubikpi
+    class RoboflowAPI,RTSPCamera external
 ```
 
 ---
 
 # Confidence Delta
 
-Since this is the initial architecture generation, all confidence scores are newly assigned. Key confidence assignments:
+| Component/Edge | Confidence | Evidence Source |
+|----------------|-----------|-----------------|
+| **Development Pipeline** |
+| DownloadDataset → RoboflowAPI | 0.95 | Explicit Roboflow client usage in `download_dataset.py` |
+| EnvConfig → DownloadDataset | 0.95 | `load_dotenv()` and `ROBOFLOW_API_KEY` usage |
+| **Jetson Runtime** |
+| DirectInf → RoboflowAPI | 0.9 | `inference` SDK model loading |
+| TimedRun → RoboflowAPI | 0.9 | `get_model()` and inference calls |
+| StreamInf → RoboflowAPI | 0.95 | `InferencePipeline` with model reference |
+| StreamInf → RTSPCamera | 0.95 | RTSP_URL environment variable usage |
+| ContainerInf → LocalInfServer | 0.85 | `InferenceHTTPClient` to localhost:9001 |
+| LocalInfServer → RoboflowAPI | 0.8 | Inferred from workflow execution pattern |
+| **Rubik Pi Runtime** |
+| RTSPTFLite → TFLiteModel | 0.95 | Explicit TFLite interpreter loading |
+| RTSPTFLite → RTSPCamera | 0.95 | RTSP source argument in CLI |
+| TFLiteModel → ModelMetadata | 0.9 | Co-located metadata file |
 
-| Component/Edge | Confidence | Rationale |
-|----------------|-----------|-----------|
-| **DownloadScript → RoboflowAPI** | 0.92 | Explicit dependency on `roboflow` package and API key requirement |
-| **StreamInf → RTSPStream** | 0.88 | RTSP_URL environment variable and InferencePipeline usage documented |
-| **ContainerWorkflow → LocalInferenceServer** | 0.95 | Explicit localhost:9001 endpoint documented in architecture_signals |
-| **TrainingWorkflow → PTModels** | 0.90 | YOLO training CLI produces .pt models per ultralytics standard |
-| **ConversionScript → TFLiteModels** | 0.85 | Conversion script purpose explicitly stated, TFLite output inferred |
-| **DirectInf → TFLiteRuntime** | 0.90 | Explicit dependency on tflite_runtime for Jetson inference |
-| **LocalInferenceServer → RoboflowAPI** | 0.85 | Inference server loads models; Roboflow integration documented but connection method not explicit |
-| **PTModels → SavedModel** | 0.80 | metadata.yaml presence suggests SavedModel export, but conversion path not explicitly documented |
-
-**Needs Verification:**
-- Exact model format used by `LocalInferenceServer` (assumes Roboflow-hosted models based on API integration)
-- Whether `on_container.py` uses local TFLite models or remote Roboflow models (evidence suggests remote)
+**Notes:**
+- All confidence scores reflect the strength of evidence in the provided summaries
+- No speculative edges were added; all relationships are traceable to explicit code patterns
+- The offline nature of Rubik Pi runtime is explicitly documented (no Roboflow API dependencies)
