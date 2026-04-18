@@ -11,6 +11,7 @@ if __package__:
     from ..lib.prompts import (
         EVALUATION_DIAGRAM_PROMPT,
         EVALUATION_JUDGE_PROMPT,
+        EVALUATION_QUESTION_GENERATOR_PROMPT,
         EVALUATION_REPO_PROMPT,
     )
     from ..lib.repo_reader import load_readme, load_repo_files
@@ -18,6 +19,7 @@ else:  # pragma: no cover - supports running from inside aai/
     from lib.prompts import (  # type: ignore[no-redef]
         EVALUATION_DIAGRAM_PROMPT,
         EVALUATION_JUDGE_PROMPT,
+        EVALUATION_QUESTION_GENERATOR_PROMPT,
         EVALUATION_REPO_PROMPT,
     )
     from lib.repo_reader import load_readme, load_repo_files  # type: ignore[no-redef]
@@ -35,6 +37,8 @@ class EvaluationResult:
     questions: list[dict]
     overall_score: float
     summary: str
+    core_questions: list[str]
+    repo_specific_questions: list[str]
     repo_answers: list[dict]
     diagram_answers: list[dict]
     token_stats: TokenStats
@@ -56,6 +60,12 @@ def load_questions(questions_path: str | Path | None = None) -> list[str]:
     if not questions:
         raise RuntimeError(f"No numbered evaluation questions found in {path}")
     return questions
+
+
+def _write_question_markdown(path: Path, title: str, questions: list[str]) -> None:
+    lines = [f"# {title}", ""]
+    lines.extend(f"{index}. {question}" for index, question in enumerate(questions, start=1))
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
 def build_repo_digest(
@@ -121,6 +131,45 @@ def _invoke_json(llm, system_prompt: str, human_content: str) -> tuple[dict, Tok
     return _extract_json(response.content), _usage_from_response(response)
 
 
+def generate_repo_specific_questions(
+    *,
+    repo_digest: str,
+    core_questions: list[str],
+    llm,
+) -> tuple[list[str], TokenStats]:
+    core_question_block = "\n".join(
+        f"{index}. {question}" for index, question in enumerate(core_questions, start=1)
+    )
+    payload, usage = _invoke_json(
+        llm,
+        EVALUATION_QUESTION_GENERATOR_PROMPT,
+        (
+            f"## Fixed Core Questions\n{core_question_block}\n\n"
+            f"## Repository Digest\n{repo_digest}"
+        ),
+    )
+    raw_questions = payload.get("questions", [])
+    cleaned_questions: list[str] = []
+    seen: set[str] = set(question.strip().lower() for question in core_questions)
+
+    for item in raw_questions:
+        question = str(item).strip()
+        if not question:
+            continue
+        normalized = question.lower()
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+        cleaned_questions.append(question)
+        if len(cleaned_questions) == 10:
+            break
+
+    if len(cleaned_questions) < 5:
+        raise RuntimeError("Question generator returned fewer than 5 usable repo-specific questions.")
+
+    return cleaned_questions, usage
+
+
 def evaluate_diagram(
     *,
     repo_path: str | Path,
@@ -129,8 +178,14 @@ def evaluate_diagram(
     questions_path: str | Path | None = None,
     output_dir: str | Path | None = None,
 ) -> EvaluationResult:
-    questions = load_questions(questions_path)
+    core_questions = load_questions(questions_path)
     repo_digest = build_repo_digest(repo_path)
+    repo_specific_questions, question_usage = generate_repo_specific_questions(
+        repo_digest=repo_digest,
+        core_questions=core_questions,
+        llm=llm,
+    )
+    questions = [*core_questions, *repo_specific_questions]
     question_block = "\n".join(f"{index}. {question}" for index, question in enumerate(questions, start=1))
 
     repo_payload, repo_usage = _invoke_json(
@@ -159,12 +214,17 @@ def evaluate_diagram(
 
     total_score = sum(int(item.get("score", 0) or 0) for item in question_scores)
     overall_score = (total_score / (len(question_scores) * 5)) * 100
-    usage_totals = _add_usage(_add_usage(repo_usage, diagram_usage), judge_usage)
+    usage_totals = _add_usage(
+        _add_usage(_add_usage(question_usage, repo_usage), diagram_usage),
+        judge_usage,
+    )
 
     result = EvaluationResult(
         questions=question_scores,
         overall_score=overall_score,
         summary=str(judge_payload.get("summary", "")).strip(),
+        core_questions=core_questions,
+        repo_specific_questions=repo_specific_questions,
         repo_answers=repo_payload.get("answers", []),
         diagram_answers=diagram_payload.get("answers", []),
         token_stats=usage_totals,
@@ -173,6 +233,21 @@ def evaluate_diagram(
     if output_dir is not None:
         destination = Path(output_dir)
         destination.mkdir(parents=True, exist_ok=True)
+        _write_question_markdown(
+            destination / "core_eval_questions.md",
+            "Core Evaluation Questions",
+            core_questions,
+        )
+        _write_question_markdown(
+            destination / "repo_specific_eval_questions.md",
+            "Repo-Specific Evaluation Questions",
+            repo_specific_questions,
+        )
+        _write_question_markdown(
+            destination / "combined_eval_questions.md",
+            "Combined Evaluation Questions",
+            questions,
+        )
         (destination / "repo_answers.json").write_text(
             json.dumps(repo_payload, indent=2),
             encoding="utf-8",

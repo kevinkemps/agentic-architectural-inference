@@ -57,6 +57,7 @@ Environment setup and provider configuration are documented in `README.md`.
 - Keep stage handoffs explicit via filesystem artifacts under `aai/output_analysis/`.
 - Prefer evidence-backed edits to architecture prompts; do not add speculative components or edges.
 - Keep evaluation scoring prompts in `prompts/*.md`; do not hardcode rubric changes in runtime code.
+- Keep repo-specific question generation rules in `aai/evaluation/eval_questions.md` and `prompts/evaluation-question-generator.md`.
 - `LLM_PROVIDER=local` relies on MLX server behavior in `aai/lib/llm.py`; local model runs may fail if server startup fails.
 - Mermaid rendering depends on external tooling (`mmdc` or Playwright fallback) in `aai/lib/mermaid_renderer.py`; if unavailable, rendering can be skipped.
 
@@ -67,6 +68,7 @@ Environment setup and provider configuration are documented in `README.md`.
 - Pipeline orchestration: `aai/pipeline.py`
 - Agent implementations: `aai/lib/agents.py`
 - Evaluation runtime: `aai/evaluation/service.py`
+- Core evaluation question contract: `aai/evaluation/eval_questions.md`
 - Critique evolution guide: `docs/agents/critique-evolution-guide.md`
 
 ## Stage Contract
@@ -84,6 +86,7 @@ Output root defaults to `aai/output_analysis/` when running from the `aai/` dire
 
 Auxiliary evaluation artifacts may also be written under a run-local `evaluation/`
 directory without changing the fixed stage list above.
+This includes generated repo-specific question files used for scoring.
 
 ## Agent Definitions
 
@@ -136,6 +139,8 @@ directory without changing the fixed stage list above.
   - completed rounds meet `--critic-rounds`.
 - The web app evaluates each selected diagram by comparing repository-grounded answers
   against diagram-grounded answers using `aai/evaluation/eval_questions.md`.
+- Evaluation first loads fixed cross-repository questions, then generates a separate
+  repo-specific question file from the scanned repository and scores against the combined set.
 
 ## Readability Standard (Team Requirement)
 

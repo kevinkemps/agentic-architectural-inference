@@ -36,6 +36,7 @@ prompts/
   critic-agent-v2.md
   evaluation-diagram-answers.md
   evaluation-judge.md
+  evaluation-question-generator.md
   evaluation-repo-answers.md
   file-summarizer.md
   single-shot-architect.md
@@ -103,13 +104,17 @@ The UI supports:
 
 ## Evaluation Model
 
-Evaluation uses the question set in `aai/evaluation/eval_questions.md`.
+Evaluation uses:
+- the fixed core question set in `aai/evaluation/eval_questions.md`
+- an automatically generated repo-specific question set produced from the scanned repository
 
 For each run:
-1. The model answers the questions from repository traversal evidence.
-2. The model answers the same questions from the generated Mermaid diagram only.
-3. A judge model compares the two answer sets and scores each question from `0` to `5`.
-4. The overall score is normalized to `0-100`.
+1. The system loads the fixed core questions.
+2. The system generates 5 to 10 repo-specific questions from the repository digest.
+3. The model answers the combined question set from repository traversal evidence.
+4. The model answers the same combined question set from the generated Mermaid diagram only.
+5. A judge model compares the two answer sets and scores each question from `0` to `5`.
+6. The overall score is normalized to `0-100`.
 
 This supports:
 - RQ1: compare multi-agent runs against `--mode single_prompt`
@@ -140,6 +145,9 @@ Each run contains:
     mermaid_refined.mmd
     mermaid_refined.svg|png
   evaluation/
+    core_eval_questions.md
+    repo_specific_eval_questions.md
+    combined_eval_questions.md
     repo_answers.json
     diagram_answers.json
     scorecard.json

@@ -79,3 +79,8 @@ EVALUATION_JUDGE_PROMPT = _load_prompt(
     "evaluation-judge.md",
     "You compare repository and diagram answers and score their agreement.",
 )
+
+EVALUATION_QUESTION_GENERATOR_PROMPT = _load_prompt(
+    "evaluation-question-generator.md",
+    "You generate repository-specific evaluation questions.",
+)
