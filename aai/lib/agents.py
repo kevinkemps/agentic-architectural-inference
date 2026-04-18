@@ -24,6 +24,7 @@ from .prompts import (
     CONTEXT_MANAGER_PROMPT,
     CRITIC_PROMPT,
     DESIGNER_PROMPT,
+    SINGLE_SHOT_ARCHITECT_PROMPT,
     FILE_SUMMARIZER_PROMPT,
 )
 from .repo_reader import LangChainChunker, TEXT_SUFFIXES
@@ -469,3 +470,21 @@ class CritiqueAgent(Agent):
         critique_text = self.invoke_llm(llm, human_content)
         self.save_md("critique", critique_text)
         return critique_text
+
+
+class SingleShotArchitectAgent(Agent):
+    """Single-call baseline that turns a repository digest into a Mermaid diagram."""
+
+    def __init__(
+        self,
+        output_dir: Path,
+        debug: bool = False,
+        stage: str = STAGES[2],
+    ) -> None:
+        super().__init__(stage=stage, output_dir=output_dir, debug=debug)
+        self.system_prompt = SINGLE_SHOT_ARCHITECT_PROMPT
+
+    def draft_from_digest(self, llm, repo_digest: str) -> str:
+        diagram = self.invoke_llm(llm, repo_digest)
+        self.save_md("mermaid", diagram)
+        return diagram

@@ -1,27 +1,28 @@
 # Agentic Architectural Inference
 
-Generate architecture diagrams from source code using a staged, multi-agent pipeline with critique-and-revision loops.
+Generate high-level architecture diagrams from source code with either a staged multi-agent pipeline or a single-prompt baseline, then score the diagram against repository-grounded answers.
 
 ## What This Builds
 
-Input: a local repository path  
-Output: draft and refined Mermaid architecture diagrams, critique feedback, and rendered visual assets
+Input: a local repository path
 
-Pipeline stages:
-1. FileSummarizer (01_scout): summarizes source files into architecture signals.
-2. ContextManager (02_aggregate): reduces scout summaries into architect-sized context.
-3. ArchitectAgent draft (03_draft): creates an initial Mermaid architecture.
-4. CritiqueAgent (04_critique): challenges unsupported claims and weak edges.
-5. ArchitectAgent refine (05_refined): revises the draft using critique feedback.
-6. Renderer (06_visual): extracts Mermaid source and attempts PNG/SVG rendering.
+Outputs per run:
+- draft Mermaid diagram
+- refined Mermaid diagram when the critic is enabled
+- rendered Mermaid assets when `mmdc` is available
+- evaluation answer sets and a scorecard
+- latency and token summaries
 
 ## Project Layout
 
 ```text
 aai/
-  cli.py                   # CLI entrypoint
-  pipeline.py              # stage orchestration
-  eval_runner.py           # evaluation metrics runner
+  cli.py
+  pipeline.py
+  webapp.py
+  evaluation/
+    eval_questions.md
+    service.py
   lib/
     agents.py
     llm.py
@@ -29,127 +30,125 @@ aai/
     mermaid_renderer.py
     prompts.py
     repo_reader.py
-  evaluation/
-    eval_questions.md
 prompts/
-  file-summarizer.md
-  context-manager.md
   architect.md
+  context-manager.md
   critic-agent-v2.md
-  designer-agent.md
-requirements.txt
+  evaluation-diagram-answers.md
+  evaluation-judge.md
+  evaluation-repo-answers.md
+  file-summarizer.md
+  single-shot-architect.md
 AGENTS.md
+requirements.txt
 ```
 
-## Prerequisites
-
-- Python 3.10+
-
 ## Setup
-
-### 1. Create a Virtual Environment
 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
-```
-
-Install dependencies:
-
-```bash
 pip install -r requirements.txt
-```
-
-### 2. Configure Environment Variables
-
-```bash
 cp .env_example .env
 ```
 
-Then edit .env. Supported providers are:
-- local
-- local-ollama
-- claude
-- openai
+Set `LLM_PROVIDER` plus the provider-specific model and API key values in `.env`.
 
-Minimal OpenAI example:
+## CLI Usage
+
+Run the default multi-agent pipeline:
 
 ```bash
-OPENAI_API_KEY=sk-proj-xxxx
-OPENAI_MODEL=gpt-4o
-LLM_PROVIDER=openai
+.venv/bin/python -m aai.cli --repo-path /path/to/repo
 ```
 
-## Running the Pipeline
-
-Run from inside the aai directory:
+Disable the critic loop:
 
 ```bash
-cd aai
-python3 -m cli
+.venv/bin/python -m aai.cli --repo-path /path/to/repo --critic-rounds 0
 ```
 
-Analyze a specific repository:
+Run the single-prompt baseline:
 
 ```bash
-python3 -m cli --repo-path /path/to/repo
+.venv/bin/python -m aai.cli --repo-path /path/to/repo --mode single_prompt
 ```
 
 Useful options:
 
 ```bash
-# Output root (default: output_analysis; stage outputs are cleared before each run)
-python3 -m cli --out-dir output_analysis
+.venv/bin/python -m aai.cli --out-dir aai/output_analysis/custom_run
+.venv/bin/python -m aai.cli --max-chars-per-chunk 500000
+.venv/bin/python -m aai.cli --architect-threshold 30000
+.venv/bin/python -m aai.cli --arch-md-path /path/to/reference_architecture.md
+```
 
-# Chunk and context controls
-python3 -m cli --max-chars-per-chunk 500000
-python3 -m cli --architect-threshold 30000
+## Web App
 
-# Critique loops
-python3 -m cli --critic-rounds 3
+Launch the local workbench:
 
-# Optional external architecture reference
-python3 -m cli --arch-md-path /path/to/reference_architecture.md
+```bash
+.venv/bin/python -m aai.webapp
+```
 
+Then open `http://127.0.0.1:8787`.
+
+The UI supports:
+- repo path input
+- multi-agent vs single-prompt mode
+- critic on/off
+- diagram rendering
+- per-question evaluation scores
+- latency and token totals
+
+## Evaluation Model
+
+Evaluation uses the question set in `aai/evaluation/eval_questions.md`.
+
+For each run:
+1. The model answers the questions from repository traversal evidence.
+2. The model answers the same questions from the generated Mermaid diagram only.
+3. A judge model compares the two answer sets and scores each question from `0` to `5`.
+4. The overall score is normalized to `0-100`.
+
+This supports:
+- RQ1: compare multi-agent runs against `--mode single_prompt`
+- RQ2: compare critic-enabled runs against `--critic-rounds 0`
+- RQ3: compare `total_duration_seconds` and token usage with and without the critic
 
 ## Output Structure
 
-By default, each run clears and then rewrites aai/output_analysis/ with stage directories:
+Single CLI runs write to the chosen `--out-dir`.
+
+The web app writes timestamped runs under `aai/output_analysis/runs/`.
+
+Each run contains:
 
 ```text
-output_analysis/
+<run_dir>/
   01_scout/
-    summary*.md
   02_aggregate/
-    reduced_sum*.md
   03_draft/
     mermaid.md
   04_critique/
     critique.md
-    feedback.json             # evaluation feedback output
-    designer_proposals.md     # designer proposal output
-    evolution_history.json    # designer version history
   05_refined/
     mermaid.md
   06_visual/
     mermaid_draft.mmd
+    mermaid_draft.svg|png
     mermaid_refined.mmd
-    mermaid_draft.svg|png     # when Mermaid rendering succeeds
-    mermaid_refined.svg|png   # when Mermaid rendering succeeds
+    mermaid_refined.svg|png
+  evaluation/
+    repo_answers.json
+    diagram_answers.json
+    scorecard.json
 ```
 
-## Onboarding Evaluation
-
-The repository also includes a Copilot agent to help evaluate the block diagram output: [`.github/agents/evaluation-onboarding.agent.md`].
-
-### Instructions on use
-In Copilot Chat, pick the Evaluator agent. Enter "run evaluation". It should read only [aai/output_analysis/06_visual/mermaid_refined.mmd] agentic_architectural_inference/aai/output_analysis/06_visual/mermaid_refined.mmd), answer the questions in [aai/evaluation/eval_questions.md], and write its report to [aai/evaluation/evaluation.md].
-
-To change the onboarding questions, edit [aai/evaluation/eval_questions.md]. You can add new questions there or replace the existing ones to match the evaluation you want the agent to perform.
-
+Some directories remain empty for `single_prompt` runs or when the critic is disabled.
 
 ## Notes
 
-- Prompts are loaded at runtime from prompts/*.md via aai/lib/prompts.py.
-- The onboarding evaluator is separate from the main pipeline output under aai/output_analysis/.
-- Mermaid rendering requires mmdc (Mermaid CLI). If Chromium is missing, the renderer attempts a Playwright install and retries.
+- Prompt behavior lives in `prompts/*.md`.
+- Mermaid rendering requires `mmdc`. If Chromium is missing, the renderer attempts a Playwright install and retries.
+- The current environment shows warnings with Python 3.14 from `langchain_core`; Python 3.10-3.12 is the safer target for actual runs.

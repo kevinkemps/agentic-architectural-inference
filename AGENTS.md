@@ -21,10 +21,12 @@ For prompt-level files and future agent variants, use `docs/agents/`.
 Primary implementation lives in `aai/`:
 
 - `aai/cli.py`: CLI entrypoint and runtime flags
-- `aai/pipeline.py`: LangGraph orchestration for stage execution and critique loops
+- `aai/pipeline.py`: pipeline orchestration for stage execution and critique loops
 - `aai/lib/agents.py`: concrete agent classes and file handoffs
 - `aai/lib/prompts.py`: prompt loading from `prompts/*.md`
 - `aai/lib/repo_reader.py`: source file scanning and filtering rules
+- `aai/evaluation/service.py`: repository-vs-diagram evaluation and scoring
+- `aai/webapp.py`: local browser UI for generation and evaluation
 
 Prompt definitions live in `prompts/` and are loaded at runtime.
 
@@ -43,6 +45,7 @@ Common variants:
 python3 -m cli --repo-path /path/to/repo
 python3 -m cli --critic-rounds 3
 python3 -m cli --max-chars-per-chunk 500000
+python3 -m cli --mode single_prompt
 ```
 
 Environment setup and provider configuration are documented in `README.md`.
@@ -53,6 +56,7 @@ Environment setup and provider configuration are documented in `README.md`.
 - Keep prompt behavior changes in `prompts/*.md`; runtime prompt loading is implemented in `aai/lib/prompts.py`.
 - Keep stage handoffs explicit via filesystem artifacts under `aai/output_analysis/`.
 - Prefer evidence-backed edits to architecture prompts; do not add speculative components or edges.
+- Keep evaluation scoring prompts in `prompts/*.md`; do not hardcode rubric changes in runtime code.
 - `LLM_PROVIDER=local` relies on MLX server behavior in `aai/lib/llm.py`; local model runs may fail if server startup fails.
 - Mermaid rendering depends on external tooling (`mmdc` or Playwright fallback) in `aai/lib/mermaid_renderer.py`; if unavailable, rendering can be skipped.
 
@@ -62,6 +66,7 @@ Environment setup and provider configuration are documented in `README.md`.
 - Prompt contracts: `prompts/file-summarizer.md`, `prompts/context-manager.md`, `prompts/architect.md`, `prompts/critic-agent-v2.md`, `prompts/designer-agent.md`
 - Pipeline orchestration: `aai/pipeline.py`
 - Agent implementations: `aai/lib/agents.py`
+- Evaluation runtime: `aai/evaluation/service.py`
 - Critique evolution guide: `docs/agents/critique-evolution-guide.md`
 
 ## Stage Contract
@@ -76,6 +81,9 @@ The pipeline stages are fixed in code as:
 6. `06_visual`
 
 Output root defaults to `aai/output_analysis/` when running from the `aai/` directory.
+
+Auxiliary evaluation artifacts may also be written under a run-local `evaluation/`
+directory without changing the fixed stage list above.
 
 ## Agent Definitions
 
@@ -119,14 +127,15 @@ Output root defaults to `aai/output_analysis/` when running from the `aai/` dire
 
 ## Runtime Behavior
 
-- Orchestration is managed by LangGraph in `aai/pipeline.py`.
+- Orchestration is managed in `aai/pipeline.py`.
 - Flow is linear until critique, then loops critique -> revise.
+- The CLI and web app also support a `single_prompt` baseline mode that skips scout,
+  aggregate, and critique loops and writes a draft diagram from one repository digest prompt.
 - Loop exits when either:
   - no critique output is returned, or
   - completed rounds meet `--critic-rounds`.
-- After critique loop exits:
-  - If `--eval-questions-path` provided: CritiqueEvaluator runs, produces feedback.json
-  - If `--enable-designer` enabled: DesignerAgent runs, analyzes feedback, produces designer_proposals.md and evolution_history.json
+- The web app evaluates each selected diagram by comparing repository-grounded answers
+  against diagram-grounded answers using `aai/evaluation/eval_questions.md`.
 
 ## Readability Standard (Team Requirement)
 

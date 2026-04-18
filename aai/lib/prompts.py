@@ -59,3 +59,23 @@ DESIGNER_PROMPT = _load_prompt(
     "designer-agent.md",
     "You are Designer Agent that evolves critique strategies.",
 )
+
+SINGLE_SHOT_ARCHITECT_PROMPT = _load_prompt(
+    "single-shot-architect.md",
+    "You are a single-prompt architect agent.",
+)
+
+EVALUATION_REPO_PROMPT = _load_prompt(
+    "evaluation-repo-answers.md",
+    "You answer evaluation questions from repository evidence.",
+)
+
+EVALUATION_DIAGRAM_PROMPT = _load_prompt(
+    "evaluation-diagram-answers.md",
+    "You answer evaluation questions from architecture-diagram evidence.",
+)
+
+EVALUATION_JUDGE_PROMPT = _load_prompt(
+    "evaluation-judge.md",
+    "You compare repository and diagram answers and score their agreement.",
+)
