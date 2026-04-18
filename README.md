@@ -98,8 +98,11 @@ The UI supports:
 - repo path input
 - multi-agent vs single-prompt mode
 - critic on/off
+- debug comparison mode that runs single-shot, critic-off, and critic-on together
 - diagram rendering
 - per-question evaluation scores
+- critic-change highlight text for critic-enabled runs
+- save analysis as JSON
 - latency and token totals
 
 ## Evaluation Model
@@ -151,9 +154,11 @@ Each run contains:
     repo_answers.json
     diagram_answers.json
     scorecard.json
+    analysis_summary.json
 ```
 
 Some directories remain empty for `single_prompt` runs or when the critic is disabled.
+Debug comparison runs also write a combined `debug_analysis.json` file at the run root.
 
 ## Notes
 

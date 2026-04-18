@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import mimetypes
+import re
 from datetime import datetime
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -43,6 +44,137 @@ def _run_mode(use_multi_agent: bool, use_critic: bool) -> tuple[str, int]:
     if not use_multi_agent:
         return "single_prompt", 0
     return "multi_agent", 1 if use_critic else 0
+
+
+def _run_label(mode: str, critic_rounds: int) -> str:
+    if mode == "single_prompt":
+        return "Single Shot"
+    if critic_rounds > 0:
+        return "Multi-Agent Critic On"
+    return "Multi-Agent Critic Off"
+
+
+def _clean_text(value: str, *, limit: int = 280) -> str:
+    text = re.sub(r"\s+", " ", value).strip()
+    if len(text) <= limit:
+        return text
+    return text[: limit - 3].rstrip() + "..."
+
+
+def _extract_biggest_critic_change(output_dir: Path) -> str | None:
+    critique_path = output_dir / "04_critique" / "critique.md"
+    if not critique_path.exists():
+        return None
+
+    text = critique_path.read_text(encoding="utf-8")
+    issue_pattern = re.compile(
+        r"\*\*Severity:\*\*\s*(High|Medium|Low).*?"
+        r"\*\*The Claim:\*\*\s*(.*?)\s*"
+        r"\*\*The \"Why\":\*\*\s*(.*?)(?=\*\*Severity:\*\*|####|\Z)",
+        re.DOTALL,
+    )
+    matches = issue_pattern.findall(text)
+    if matches:
+        severity_rank = {"High": 3, "Medium": 2, "Low": 1}
+        severity, claim, rationale = max(matches, key=lambda item: severity_rank.get(item[0], 0))
+        return f"{severity} impact: {_clean_text(claim, limit=140)} Reason: {_clean_text(rationale, limit=160)}"
+
+    action_pattern = re.compile(
+        r"\b(Remove|Downgrade Confidence|Needs More Evidence)\b(.*?)(?=\n\s*\n|\n\s*####|\Z)",
+        re.DOTALL,
+    )
+    action_match = action_pattern.search(text)
+    if action_match:
+        action, details = action_match.groups()
+        return f"{action}: {_clean_text(details)}"
+
+    for block in re.split(r"\n\s*\n", text):
+        cleaned = _clean_text(block)
+        if cleaned:
+            return cleaned
+    return None
+
+
+def _build_analysis_export(run_payloads: list[dict], *, repo_path: str, debug_mode: bool) -> dict:
+    return {
+        "repo_path": repo_path,
+        "debug_mode": debug_mode,
+        "generated_at": datetime.now().isoformat(timespec="seconds"),
+        "runs": [
+            {
+                "label": run["label"],
+                "analysis_json_path": run["analysis_json_path"],
+                "critic_highlight": run["critic_highlight"],
+                "pipeline": run["pipeline"],
+                "evaluation": run["evaluation"],
+            }
+            for run in run_payloads
+        ],
+    }
+
+
+def _write_json(path: Path, payload: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+
+def _execute_run(
+    *,
+    label: str,
+    repo_path: str,
+    out_dir: Path,
+    mode: str,
+    critic_rounds: int,
+) -> dict:
+    pipeline_result = run_pipeline_with_details(
+        repo_path=repo_path,
+        out_dir=out_dir,
+        critic_rounds=critic_rounds,
+        mode=mode,
+        verbose=False,
+    )
+
+    if not pipeline_result.selected_mermaid_path:
+        raise RuntimeError(f"No Mermaid output was generated for {label}.")
+
+    diagram_text = pipeline_result.selected_mermaid_path.read_text(encoding="utf-8")
+    evaluation_dir = pipeline_result.output_dir / "evaluation"
+    evaluation_result = evaluate_diagram(
+        repo_path=repo_path,
+        diagram_text=diagram_text,
+        llm=get_model(),
+        output_dir=evaluation_dir,
+    )
+
+    svg_path = _selected_svg_path(pipeline_result.rendered_assets)
+    svg_text = svg_path.read_text(encoding="utf-8") if svg_path else None
+    critic_highlight = (
+        _extract_biggest_critic_change(pipeline_result.output_dir)
+        if pipeline_result.used_critic
+        else None
+    )
+
+    run_payload = {
+        "label": label,
+        "pipeline": pipeline_result.to_dict(),
+        "evaluation": evaluation_result.to_dict(),
+        "diagram_text": diagram_text,
+        "svg_text": svg_text,
+        "critic_highlight": critic_highlight,
+    }
+
+    analysis_json_path = evaluation_dir / "analysis_summary.json"
+    _write_json(
+        analysis_json_path,
+        {
+            "label": label,
+            "critic_highlight": critic_highlight,
+            "pipeline": run_payload["pipeline"],
+            "evaluation": run_payload["evaluation"],
+        },
+    )
+    run_payload["analysis_json_path"] = str(analysis_json_path)
+    return run_payload
 
 
 def _html_page() -> str:
@@ -149,6 +281,17 @@ def _html_page() -> str:
       cursor: pointer;
       margin-top: 12px;
     }
+    .save {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 12px 18px;
+      background: #fff8ef;
+      color: var(--ink);
+      font: inherit;
+      cursor: pointer;
+      margin-top: 10px;
+    }
     .status {
       margin-top: 14px;
       min-height: 24px;
@@ -211,6 +354,23 @@ def _html_page() -> str:
       border-top: 1px solid var(--line);
     }
     .q:first-of-type { border-top: 0; }
+    .run-section {
+      margin-bottom: 24px;
+      padding-bottom: 24px;
+      border-bottom: 1px solid var(--line);
+    }
+    .run-section:last-child {
+      margin-bottom: 0;
+      padding-bottom: 0;
+      border-bottom: 0;
+    }
+    .highlight {
+      margin: 12px 0 16px;
+      padding: 12px 14px;
+      border-radius: 14px;
+      background: #f6ead5;
+      border: 1px solid #dfc7a2;
+    }
     pre {
       white-space: pre-wrap;
       word-break: break-word;
@@ -239,7 +399,9 @@ def _html_page() -> str:
         <label>Mode</label>
         <div class="toggle"><input id="multiAgent" type="checkbox" checked> <span>Use multi-agent pipeline</span></div>
         <div class="toggle"><input id="critic" type="checkbox" checked> <span>Enable critic loop</span></div>
+        <div class="toggle"><input id="debugMode" type="checkbox"> <span>Debug mode: run single-shot, critic off, and critic on</span></div>
         <button id="runButton" class="run">Generate Diagram + Score</button>
+        <button id="saveButton" class="save hidden">Save Analysis JSON</button>
         <div id="status" class="status"></div>
       </aside>
       <main class="panel workspace">
@@ -261,9 +423,12 @@ def _html_page() -> str:
     const diagramCanvas = document.getElementById("diagramCanvas");
     const analysisCanvas = document.getElementById("analysisCanvas");
     const runButton = document.getElementById("runButton");
+    const saveButton = document.getElementById("saveButton");
     const multiAgent = document.getElementById("multiAgent");
     const critic = document.getElementById("critic");
+    const debugMode = document.getElementById("debugMode");
     const repoPath = document.getElementById("repoPath");
+    let currentAnalysisExport = null;
 
     document.querySelectorAll(".tab").forEach((button) => {
       button.addEventListener("click", () => {
@@ -274,12 +439,18 @@ def _html_page() -> str:
       });
     });
 
-    multiAgent.addEventListener("change", () => {
-      critic.disabled = !multiAgent.checked;
+    function syncControlState() {
+      const debugEnabled = debugMode.checked;
+      multiAgent.disabled = debugEnabled;
+      critic.disabled = debugEnabled || !multiAgent.checked;
       if (!multiAgent.checked) {
         critic.checked = false;
       }
-    });
+    }
+
+    multiAgent.addEventListener("change", syncControlState);
+    debugMode.addEventListener("change", syncControlState);
+    syncControlState();
 
     function escapeHtml(value) {
       const div = document.createElement("div");
@@ -287,53 +458,101 @@ def _html_page() -> str:
       return div.innerHTML;
     }
 
-    function renderAnalysis(result) {
-      const questions = result.evaluation.questions.map((item) => `
+    function renderRunQuestions(result) {
+      return result.evaluation.questions.map((item) => `
         <div class="q">
           <strong>${escapeHtml(item.question)}</strong>
           <div>Score: ${item.score}/5</div>
           <div>${escapeHtml(item.rationale || "")}</div>
         </div>
       `).join("");
+    }
 
-      analysisCanvas.innerHTML = `
-        <div class="score">${result.evaluation.overall_score.toFixed(1)} <span style="font-size:1rem;color:#6a6258;">/ 100</span></div>
-        <p>${escapeHtml(result.evaluation.summary || "No summary returned.")}</p>
-        <div class="meta">
-          <div class="card"><strong>Mode</strong><br>${escapeHtml(result.pipeline.mode)}</div>
-          <div class="card"><strong>Critic</strong><br>${result.pipeline.used_critic ? "On" : "Off"}</div>
-          <div class="card"><strong>Latency</strong><br>${result.pipeline.total_duration_seconds.toFixed(2)}s</div>
-          <div class="card"><strong>Pipeline Tokens</strong><br>${result.pipeline.total_tokens.total_tokens}</div>
-          <div class="card"><strong>Evaluation Tokens</strong><br>${result.evaluation.token_stats.total_tokens}</div>
-        </div>
-        <h3>Question Scores</h3>
-        ${questions}
-      `;
+    function renderAnalysis(result) {
+      const sections = result.runs.map((run) => {
+        const criticHighlight = run.critic_highlight
+          ? `<div class="highlight"><strong>Biggest critic-driven change</strong><br>${escapeHtml(run.critic_highlight)}</div>`
+          : "";
+
+        return `
+          <section class="run-section">
+            <h3>${escapeHtml(run.label)}</h3>
+            <div class="score">${run.evaluation.overall_score.toFixed(1)} <span style="font-size:1rem;color:#6a6258;">/ 100</span></div>
+            <p>${escapeHtml(run.evaluation.summary || "No summary returned.")}</p>
+            ${criticHighlight}
+            <div class="meta">
+              <div class="card"><strong>Mode</strong><br>${escapeHtml(run.pipeline.mode)}</div>
+              <div class="card"><strong>Critic</strong><br>${run.pipeline.used_critic ? "On" : "Off"}</div>
+              <div class="card"><strong>Latency</strong><br>${run.pipeline.total_duration_seconds.toFixed(2)}s</div>
+              <div class="card"><strong>Pipeline Tokens</strong><br>${run.pipeline.total_tokens.total_tokens}</div>
+              <div class="card"><strong>Evaluation Tokens</strong><br>${run.evaluation.token_stats.total_tokens}</div>
+              <div class="card"><strong>Saved JSON</strong><br>${escapeHtml(run.analysis_json_path || "n/a")}</div>
+            </div>
+            <h3>Question Scores</h3>
+            ${renderRunQuestions(run)}
+          </section>
+        `;
+      }).join("");
+
+      const combinedPath = result.analysis_json_path
+        ? `<p><strong>Combined analysis JSON:</strong> ${escapeHtml(result.analysis_json_path)}</p>`
+        : "";
+      analysisCanvas.innerHTML = `${combinedPath}${sections}`;
     }
 
     function renderDiagram(result) {
-      const codeBlock = `<pre>${escapeHtml(result.diagram_text)}</pre>`;
-      const artifact = result.svg_text ? result.svg_text : codeBlock;
-      diagramCanvas.innerHTML = `
-        <div class="meta">
-          <div class="card"><strong>Output</strong><br>${escapeHtml(result.pipeline.output_dir)}</div>
-          <div class="card"><strong>Selected Diagram</strong><br>${escapeHtml(result.pipeline.selected_diagram_path || "n/a")}</div>
-        </div>
-        ${artifact}
-      `;
+      const sections = result.runs.map((run) => {
+        const codeBlock = `<pre>${escapeHtml(run.diagram_text)}</pre>`;
+        const artifact = run.svg_text ? run.svg_text : codeBlock;
+        const criticHighlight = run.critic_highlight
+          ? `<div class="highlight"><strong>Biggest critic-driven change</strong><br>${escapeHtml(run.critic_highlight)}</div>`
+          : "";
+
+        return `
+          <section class="run-section">
+            <h3>${escapeHtml(run.label)}</h3>
+            <div class="meta">
+              <div class="card"><strong>Output</strong><br>${escapeHtml(run.pipeline.output_dir)}</div>
+              <div class="card"><strong>Selected Diagram</strong><br>${escapeHtml(run.pipeline.selected_diagram_path || "n/a")}</div>
+            </div>
+            ${criticHighlight}
+            ${artifact}
+          </section>
+        `;
+      }).join("");
+      diagramCanvas.innerHTML = sections;
     }
+
+    saveButton.addEventListener("click", () => {
+      if (!currentAnalysisExport) {
+        return;
+      }
+      const blob = new Blob([JSON.stringify(currentAnalysisExport, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+      link.href = url;
+      link.download = `aai-analysis-${stamp}.json`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    });
 
     runButton.addEventListener("click", async () => {
       const payload = {
         repo_path: repoPath.value.trim(),
         use_multi_agent: multiAgent.checked,
         use_critic: critic.checked,
+        debug_mode: debugMode.checked,
       };
       if (!payload.repo_path) {
         statusEl.textContent = "Repository path is required.";
         return;
       }
       runButton.disabled = true;
+      saveButton.classList.add("hidden");
+      currentAnalysisExport = null;
       statusEl.textContent = "Running pipeline and evaluation. This can take a while.";
       diagramCanvas.textContent = "Running...";
       analysisCanvas.textContent = "Running...";
@@ -346,6 +565,10 @@ def _html_page() -> str:
         const result = await response.json();
         if (!response.ok) {
           throw new Error(result.error || "Request failed");
+        }
+        currentAnalysisExport = result.analysis_export || null;
+        if (currentAnalysisExport) {
+          saveButton.classList.remove("hidden");
         }
         statusEl.textContent = "Run complete.";
         renderDiagram(result);
@@ -386,38 +609,70 @@ class AppHandler(BaseHTTPRequestHandler):
             repo_path = str(payload["repo_path"]).strip()
             use_multi_agent = bool(payload.get("use_multi_agent", True))
             use_critic = bool(payload.get("use_critic", True))
-            mode, critic_rounds = _run_mode(use_multi_agent, use_critic)
-
+            debug_mode = bool(payload.get("debug_mode", False))
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            run_dir = RUNS_ROOT / f"{timestamp}_{mode}"
-            pipeline_result = run_pipeline_with_details(
-                repo_path=repo_path,
-                out_dir=run_dir,
-                critic_rounds=critic_rounds,
-                mode=mode,
-                verbose=False,
-            )
 
-            if not pipeline_result.selected_mermaid_path:
-                raise RuntimeError("No Mermaid output was generated.")
-
-            diagram_text = pipeline_result.selected_mermaid_path.read_text(encoding="utf-8")
-            evaluation_dir = pipeline_result.output_dir / "evaluation"
-            evaluation_result = evaluate_diagram(
-                repo_path=repo_path,
-                diagram_text=diagram_text,
-                llm=get_model(),
-                output_dir=evaluation_dir,
-            )
-
-            svg_path = _selected_svg_path(pipeline_result.rendered_assets)
-            svg_text = svg_path.read_text(encoding="utf-8") if svg_path else None
-            response = {
-                "pipeline": pipeline_result.to_dict(),
-                "evaluation": evaluation_result.to_dict(),
-                "diagram_text": diagram_text,
-                "svg_text": svg_text,
-            }
+            if debug_mode:
+                run_root = RUNS_ROOT / f"{timestamp}_debug_compare"
+                run_payloads = [
+                    _execute_run(
+                        label="Single Shot",
+                        repo_path=repo_path,
+                        out_dir=run_root / "single_shot",
+                        mode="single_prompt",
+                        critic_rounds=0,
+                    ),
+                    _execute_run(
+                        label="Multi-Agent Critic Off",
+                        repo_path=repo_path,
+                        out_dir=run_root / "critic_off",
+                        mode="multi_agent",
+                        critic_rounds=0,
+                    ),
+                    _execute_run(
+                        label="Multi-Agent Critic On",
+                        repo_path=repo_path,
+                        out_dir=run_root / "critic_on",
+                        mode="multi_agent",
+                        critic_rounds=1,
+                    ),
+                ]
+                analysis_export = _build_analysis_export(
+                    run_payloads,
+                    repo_path=repo_path,
+                    debug_mode=True,
+                )
+                analysis_json_path = run_root / "debug_analysis.json"
+                _write_json(analysis_json_path, analysis_export)
+                response = {
+                    "debug_mode": True,
+                    "runs": run_payloads,
+                    "analysis_export": analysis_export,
+                    "analysis_json_path": str(analysis_json_path),
+                }
+            else:
+                mode, critic_rounds = _run_mode(use_multi_agent, use_critic)
+                run_dir = RUNS_ROOT / f"{timestamp}_{mode}"
+                run_payload = _execute_run(
+                    label=_run_label(mode, critic_rounds),
+                    repo_path=repo_path,
+                    out_dir=run_dir,
+                    mode=mode,
+                    critic_rounds=critic_rounds,
+                )
+                analysis_export = _build_analysis_export(
+                    [run_payload],
+                    repo_path=repo_path,
+                    debug_mode=False,
+                )
+                analysis_json_path = Path(run_payload["analysis_json_path"])
+                _write_json(analysis_json_path, analysis_export)
+                response = {
+                    "debug_mode": False,
+                    "runs": [run_payload],
+                    "analysis_export": analysis_export,
+                    "analysis_json_path": str(analysis_json_path),
+                }
             self._send_json(response)
         except Exception as exc:  # pragma: no cover - runtime UI path
             self._send_json({"error": str(exc)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)

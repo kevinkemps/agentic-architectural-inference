@@ -87,6 +87,8 @@ Output root defaults to `aai/output_analysis/` when running from the `aai/` dire
 Auxiliary evaluation artifacts may also be written under a run-local `evaluation/`
 directory without changing the fixed stage list above.
 This includes generated repo-specific question files used for scoring.
+Web app runs may also write `analysis_summary.json` per run, and debug comparison
+runs may write a combined `debug_analysis.json` at the run root.
 
 ## Agent Definitions
 
@@ -139,6 +141,11 @@ This includes generated repo-specific question files used for scoring.
   - completed rounds meet `--critic-rounds`.
 - The web app evaluates each selected diagram by comparing repository-grounded answers
   against diagram-grounded answers using `aai/evaluation/eval_questions.md`.
+- The web app can also run a debug comparison mode that executes:
+  - `single_prompt`
+  - `multi_agent` with critic off
+  - `multi_agent` with critic on
+  and returns all three diagrams plus their analyses in one response.
 - Evaluation first loads fixed cross-repository questions, then generates a separate
   repo-specific question file from the scanned repository and scores against the combined set.
 
