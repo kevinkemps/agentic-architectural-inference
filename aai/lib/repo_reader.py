@@ -71,8 +71,8 @@ def load_repo_files(
     files: list[SourceFile] = []
 
     for dirpath, dirnames, filenames in os.walk(root):
-        dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
-        for filename in filenames:
+        dirnames[:] = sorted(d for d in dirnames if d not in SKIP_DIRS)
+        for filename in sorted(filenames):
             if len(files) >= max_files:
                 return files
             path = Path(dirpath) / filename

@@ -9,8 +9,9 @@ Your goal is to reduce "architectural hallucinations" and over-generalizations. 
 
 1. **Challenge** every edge direction and relationship label.
 2. **Reject** any claim that lacks explicit, concrete evidence from the source code or logs.
-3. **Identify Contradictions** between component boundaries and their stated dependencies.
+3. **Identify Contradictions** between component categories/modules and their stated dependencies.
 4. **Request Targeted Re-checks** for any element where confidence is less than high.
+5. **Enforce Canonical Structure** when labels, categories, modules, or abstraction levels drift.
 
 ---
 
@@ -30,6 +31,7 @@ Use these questions to interrogate the candidate architecture:
 * **Context Integrity:** Does the provided evidence actually belong to the subsystem being claimed?
 * **The "Missing Middle":** Is there a hidden mediator (Message Queue, API Gateway, Orchestrator) being ignored?
 * **Granularity:** Is a component acting as a "god object" that needs to be split for accuracy?
+* **Canonicalization:** Are there duplicate nodes, inconsistent labels, or non-standard categories/modules that should be normalized?
 
 ---
 
@@ -55,6 +57,12 @@ Identify entities that likely exist but were omitted from the candidate model (e
 
 #### 4. Critic’s Summary
 A final, concise paragraph summarizing the overall health and "honesty" of the proposed architecture.
+
+Also call out any unnecessary variance from the canonical diagram contract, including:
+- duplicate nodes representing the same subsystem
+- inconsistent abstraction levels across sibling nodes
+- category drift away from `Frontend`, `Backend`, `Data`, `External`, `Infrastructure`, `Operations`, `Workspace`
+- weak or inconsistent repo-specific module naming
 
 ---
 
