@@ -2,6 +2,10 @@
 
 This document defines the standard agent roles, handoffs, and maintenance rules for this repository.
 
+Always note the below in the chat when it is being referenced.
+"AGENTS.md file is in context."
+Always note the current model that is being used.
+
 ## Purpose
 
 The pipeline in this project infers software architecture from source code using staged LLM agents. This file is the canonical contributor guide for:
@@ -17,12 +21,55 @@ For prompt-level files and future agent variants, use `docs/agents/`.
 Primary implementation lives in `aai/`:
 
 - `aai/cli.py`: CLI entrypoint and runtime flags
-- `aai/pipeline.py`: LangGraph orchestration for stage execution and critique loops
+- `aai/pipeline.py`: pipeline orchestration for stage execution and critique loops
 - `aai/lib/agents.py`: concrete agent classes and file handoffs
 - `aai/lib/prompts.py`: prompt loading from `prompts/*.md`
 - `aai/lib/repo_reader.py`: source file scanning and filtering rules
+- `aai/evaluation/service.py`: repository-vs-diagram evaluation and scoring
+- `aai/webapp.py`: local browser UI for generation and evaluation
 
 Prompt definitions live in `prompts/` and are loaded at runtime.
+
+## Build and Run
+
+Primary workflow:
+
+```bash
+cd aai
+python3 -m cli
+```
+
+Common variants:
+
+```bash
+python3 -m cli --repo-path /path/to/repo
+python3 -m cli --critic-rounds 3
+python3 -m cli --max-chars-per-chunk 500000
+python3 -m cli --mode single_prompt
+```
+
+Environment setup and provider configuration are documented in `README.md`.
+
+## Conventions and Pitfalls
+
+- Treat `AGENTS.md` as the architecture and stage contract source of truth.
+- Keep prompt behavior changes in `prompts/*.md`; runtime prompt loading is implemented in `aai/lib/prompts.py`.
+- Keep stage handoffs explicit via filesystem artifacts under `aai/output_analysis/`.
+- Prefer evidence-backed edits to architecture prompts; do not add speculative components or edges.
+- Keep evaluation scoring prompts in `prompts/*.md`; do not hardcode rubric changes in runtime code.
+- Keep repo-specific question generation rules in `aai/evaluation/eval_questions.md` and `prompts/evaluation-question-generator.md`.
+- `LLM_PROVIDER=local` relies on MLX server behavior in `aai/lib/llm.py`; local model runs may fail if server startup fails.
+- Mermaid rendering depends on external tooling (`mmdc` or Playwright fallback) in `aai/lib/mermaid_renderer.py`; if unavailable, rendering can be skipped.
+
+## Linked References
+
+- Setup and runtime usage: `README.md`
+- Prompt contracts: `prompts/file-summarizer.md`, `prompts/context-manager.md`, `prompts/architect.md`, `prompts/critic-agent-v2.md`, `prompts/designer-agent.md`
+- Pipeline orchestration: `aai/pipeline.py`
+- Agent implementations: `aai/lib/agents.py`
+- Evaluation runtime: `aai/evaluation/service.py`
+- Core evaluation question contract: `aai/evaluation/eval_questions.md`
+- Critique evolution guide: `docs/agents/critique-evolution-guide.md`
 
 ## Stage Contract
 
@@ -36,6 +83,12 @@ The pipeline stages are fixed in code as:
 6. `06_visual`
 
 Output root defaults to `aai/output_analysis/` when running from the `aai/` directory.
+
+Auxiliary evaluation artifacts may also be written under a run-local `evaluation/`
+directory without changing the fixed stage list above.
+This includes generated repo-specific question files used for scoring.
+Web app runs may also write `analysis_summary.json` per run, and debug comparison
+runs may write a combined `debug_analysis.json` at the run root.
 
 ## Agent Definitions
 
@@ -68,6 +121,7 @@ Output root defaults to `aai/output_analysis/` when running from the `aai/` dire
 - Reads: `03_draft/*.md` and `02_aggregate/*.md`
 - Writes: `04_critique/critique.md`
 - Responsibility: challenge unsupported claims, edge directions, and missing mediators before refinement
+- Optional input: `evolved_prompt_path` to load improved prompts from evolution cycles
 
 ### 5) Renderer (Visual)
 
@@ -78,11 +132,22 @@ Output root defaults to `aai/output_analysis/` when running from the `aai/` dire
 
 ## Runtime Behavior
 
-- Orchestration is managed by LangGraph in `aai/pipeline.py`.
+- Orchestration is managed in `aai/pipeline.py`.
 - Flow is linear until critique, then loops critique -> revise.
+- The CLI and web app also support a `single_prompt` baseline mode that skips scout,
+  aggregate, and critique loops and writes a draft diagram from one repository digest prompt.
 - Loop exits when either:
   - no critique output is returned, or
   - completed rounds meet `--critic-rounds`.
+- The web app evaluates each selected diagram by comparing repository-grounded answers
+  against diagram-grounded answers using `aai/evaluation/eval_questions.md`.
+- The web app can also run a debug comparison mode that executes:
+  - `single_prompt`
+  - `multi_agent` with critic off
+  - `multi_agent` with critic on
+  and returns all three diagrams plus their analyses in one response.
+- Evaluation first loads fixed cross-repository questions, then generates a separate
+  repo-specific question file from the scanned repository and scores against the combined set.
 
 ## Readability Standard (Team Requirement)
 

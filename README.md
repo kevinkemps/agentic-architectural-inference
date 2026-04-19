@@ -1,163 +1,167 @@
 # Agentic Architectural Inference
 
-Generate high-level architecture diagrams from a codebase with a multi-agent pipeline and a falsification-first Critic loop.
+Generate high-level architecture diagrams from source code with either a staged multi-agent pipeline or a single-prompt baseline, then score the diagram against repository-grounded answers.
 
 ## What This Builds
 
-Input: local repository path  
-Output: Mermaid architecture diagram + evidence-backed critique reports
+Input: a local repository path
 
-Pipeline:
-1. `File Summarizer Agent`: summarizes each source file for architectural signals.
-2. `Context Manager Agent`: groups file summaries into subsystem partitions.
-3. `Architect Agent`: proposes components/edges + Mermaid diagram.
-4. `Critic Agent`: attempts to disprove weak edges, then forces architecture revision.
+Outputs per run:
+- draft Mermaid diagram
+- refined Mermaid diagram when the critic is enabled
+- rendered Mermaid assets when `mmdc` is available
+- evaluation answer sets and a scorecard
+- latency and token summaries
 
 ## Project Layout
 
 ```text
 aai/
-  cli.py                 # entrypoint
-  pipeline.py            # orchestration
-  agents.py              # agent calls
-  prompts.py             # loads prompts from prompts/*.md
-  repo_reader.py         # repository scanning
-  llm.py                 # OpenAI API wrapper
+  cli.py
+  pipeline.py
+  webapp.py
+  evaluation/
+    eval_questions.md
+    service.py
+  lib/
+    agents.py
+    llm.py
+    logging_config.py
+    mermaid_renderer.py
+    prompts.py
+    repo_reader.py
 prompts/
-  file-summarizer.md
-  context-manager.md
   architect.md
-  architect-revision.md
+  context-manager.md
   critic-agent-v2.md
-  reference/             # legacy/reference prompt variants
-archagent-prompts.txt    # reference-only index to split prompt files
+  evaluation-diagram-answers.md
+  evaluation-judge.md
+  evaluation-question-generator.md
+  evaluation-repo-answers.md
+  file-summarizer.md
+  single-shot-architect.md
+AGENTS.md
 requirements.txt
 ```
 
-## Prerequisites
-
-- Python 3.10+
-
 ## Setup
-
-### 1. Python Environment
-
-Create and activate a virtual environment:
 
 ```bash
 python3 -m venv .venv
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
-```
-
-Install dependencies:
-
-```bash
+source .venv/bin/activate
 pip install -r requirements.txt
-```
-
-### 2. Environment Configuration
-
-Copy the example environment file and configure your settings:
-
-```bash
 cp .env_example .env
 ```
 
-Edit `.env` to configure your LLM provider:
+Set `LLM_PROVIDER` plus the provider-specific model and API key values in `.env`.
 
-#### Example Anthropic Claude Configuration
-ANTHROPIC_API_KEY=sk-ant-xxxx
-ANTHROPIC_MODEL=claude-sonnet-4-5
-LLM_PROVIDER=claude
+## CLI Usage
 
-#### Note for Mac users
-Instead of ollama, mlx provides significant speed improvements (2x)
-Run with the 'local' parameter set to use mlx. Otherwise use ollama
-
-#### Optimization Settings
-```bash
-# Set to 'static' to skip LLM for the first step (faster, larger single context)
-FIRST_AGENT_MODE=llm
-```
-
-## Usage
-
-### Basic Commands
-
-1. mkdir code_base
-2. git clone repo into code_base
-3. cd aai
-Analyze the current repository in ../code_base:
+Run the default multi-agent pipeline:
 
 ```bash
-python3 -m cli
+.venv/bin/python -m aai.cli --repo-path /path/to/repo
 ```
 
-Analyze a specific repository:
+Disable the critic loop:
 
 ```bash
-python3 -m cli --repo-path /path/to/your/repo
+.venv/bin/python -m aai.cli --repo-path /path/to/repo --critic-rounds 0
 ```
 
-### Advanced Options
-
-#### Chunking and Context Control
-Control how files are processed for different model capabilities:
+Run the single-prompt baseline:
 
 ```bash
-# For local 8B models (smaller chunks)
-python3 -m cli --max-chars-per-chunk 50000
-
-# For powerful models like GPT-4o (larger chunks)
-python3 -m cli --max-chars-per-chunk 500000
-
-# Adjust architect context threshold
-python3 -m cli --architect-threshold 30000
+.venv/bin/python -m aai.cli --repo-path /path/to/repo --mode single_prompt
 ```
 
-#### Critique and Quality Control
-Improve diagram accuracy with multiple critique rounds:
+Useful options:
 
 ```bash
-# Single critique round (default)
-python3 -m cli --critic-rounds 1
+.venv/bin/python -m aai.cli --out-dir aai/output_analysis/custom_run
+.venv/bin/python -m aai.cli --max-chars-per-chunk 500000
+.venv/bin/python -m aai.cli --architect-threshold 30000
+.venv/bin/python -m aai.cli --arch-md-path /path/to/reference_architecture.md
 ```
 
+## Web App
 
-## Outputs
+Launch the local workbench:
 
-Each run writes:
+```bash
+.venv/bin/python -m aai.webapp
+```
 
-- `architecture.mmd`: final Mermaid flowchart
-- `architecture.json`: structured components/edges/evidence
-- `critic_reports.json`: raw critic rounds
-- `critic_report.md`: human-readable critique summary
-- `file_summaries.json`: per-file summaries
-- `partitions.json`: subsystem partitions
-- `run_stats.json`: runtime and token counters
+Then open `http://127.0.0.1:8787`.
 
-After `architecture.mmd` is written, the pipeline also attempts to render PNG/SVG
-copies into `docs/diagrams` for docs publishing 
+The UI supports:
+- repo path input
+- multi-agent vs single-prompt mode
+- critic on/off
+- debug comparison mode that runs single-shot, critic-off, and critic-on together
+- diagram rendering
+- per-question evaluation scores
+- critic-change highlight text for critic-enabled runs
+- save analysis as JSON
+- latency and token totals
 
-## New Critic Agent Design
+## Evaluation Model
 
-`prompts/critic-agent-v2.md` introduces a stricter falsification rubric:
-- challenges every edge direction and label
-- rejects unsupported flow claims
-- identifies missing mediator components
-- proposes explicit edge actions: `keep`, `downgrade_confidence`, `remove`, `needs_more_evidence`
+Evaluation uses:
+- the fixed core question set in `aai/evaluation/eval_questions.md`
+- an automatically generated repo-specific question set produced from the scanned repository
 
-Runtime prompts are loaded from `prompts/*.md` via `aai/prompts.py`, so each agent is editable independently.
+For each run:
+1. The system loads the fixed core questions.
+2. The system generates 5 to 10 repo-specific questions from the repository digest.
+3. The model answers the combined question set from repository traversal evidence.
+4. The model answers the same combined question set from the generated Mermaid diagram only.
+5. A judge model compares the two answer sets and scores each question from `0` to `5`.
+6. The overall score is normalized to `0-100`.
 
-## How To Tune Quality
+This supports:
+- RQ1: compare multi-agent runs against `--mode single_prompt`
+- RQ2: compare critic-enabled runs against `--critic-rounds 0`
+- RQ3: compare `total_duration_seconds` and token usage with and without the critic
 
-- Increase `--critic-rounds` to reduce false positives.
-- Reduce `--max-files` for very large repos to control cost first, then scale up.
-- Adjust prompts directly in `prompts/file-summarizer.md`, `prompts/context-manager.md`, `prompts/architect.md`, `prompts/architect-revision.md`, and `prompts/critic-agent-v2.md`.
-- Keep evidence requirements strict for higher trust diagrams.
+## Output Structure
 
-## Suggested Next Improvements
+Single CLI runs write to the chosen `--out-dir`.
 
-1. Add tree-sitter/static analysis tools for stronger dependency evidence.
-2. Render Mermaid to PNG/SVG in CI for docs publishing.
-3. Add evaluation harness against hand-curated architecture ground truth.
+The web app writes timestamped runs under `aai/output_analysis/runs/`.
+
+Each run contains:
+
+```text
+<run_dir>/
+  01_scout/
+  02_aggregate/
+  03_draft/
+    mermaid.md
+  04_critique/
+    critique.md
+  05_refined/
+    mermaid.md
+  06_visual/
+    mermaid_draft.mmd
+    mermaid_draft.svg|png
+    mermaid_refined.mmd
+    mermaid_refined.svg|png
+  evaluation/
+    core_eval_questions.md
+    repo_specific_eval_questions.md
+    combined_eval_questions.md
+    repo_answers.json
+    diagram_answers.json
+    scorecard.json
+    analysis_summary.json
+```
+
+Some directories remain empty for `single_prompt` runs or when the critic is disabled.
+Debug comparison runs also write a combined `debug_analysis.json` file at the run root.
+
+## Notes
+
+- Prompt behavior lives in `prompts/*.md`.
+- Mermaid rendering requires `mmdc`. If Chromium is missing, the renderer attempts a Playwright install and retries.
+- The current environment shows warnings with Python 3.14 from `langchain_core`; Python 3.10-3.12 is the safer target for actual runs.

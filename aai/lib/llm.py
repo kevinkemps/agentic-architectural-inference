@@ -13,6 +13,39 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
+def _int_env(name: str, default: int) -> int:
+    """Read an integer env var with a safe fallback."""
+    try:
+        return int(os.getenv(name, str(default)))
+    except (TypeError, ValueError):
+        return default
+
+
+def _clean_env(name: str) -> str | None:
+    """Read and normalize an env var, returning None when empty."""
+    raw = os.getenv(name)
+    if raw is None:
+        return None
+    value = raw.strip().strip('"').strip("'")
+    return value or None
+
+
+def _required_api_key(name: str) -> str:
+    """Return a validated API key string for provider auth."""
+    value = _clean_env(name)
+    if not value:
+        raise RuntimeError(f"Missing required environment variable: {name}")
+
+    # Catch common placeholder values before sending a request.
+    lowered = value.lower()
+    if "xxxx" in lowered or "your_" in lowered or "replace" in lowered:
+        raise RuntimeError(
+            f"{name} appears to be a placeholder value. Set a real API key in .env."
+        )
+
+    return value
+
+
 # ---------------------------------------------------------------------------
 # Multi-provider model factory
 # ---------------------------------------------------------------------------
@@ -53,6 +86,7 @@ def get_model(provider: str | None = None):
     """
 
     resolved = (provider or os.getenv("LLM_PROVIDER", "openai")).lower()
+    local_max_tokens = _int_env("LOCAL_MAX_OUTPUT_TOKENS", 2048)
 
     if resolved == "local":
         start_mlx_server()
@@ -62,21 +96,24 @@ def get_model(provider: str | None = None):
             base_url="http://localhost:8080/v1",
             api_key="local",
             temperature=0,
+            max_tokens=local_max_tokens,
         )
 
     elif resolved == "local-ollama":
         model_name = os.getenv("MODEL_NAME", "qwen3-vl:8b")
+        ollama_num_predict = _int_env("OLLAMA_NUM_PREDICT", local_max_tokens)
         return ChatOllama(
             model=model_name,
             base_url="http://localhost:11434",
             temperature=0,
+            num_predict=ollama_num_predict,
         )
 
     elif resolved == "claude":
         model_name = os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-5")
         return ChatAnthropic(
             model=model_name,
-            api_key=os.getenv("ANTHROPIC_API_KEY"),
+            api_key=_required_api_key("ANTHROPIC_API_KEY"),
             temperature=0,
         )
 
@@ -84,6 +121,6 @@ def get_model(provider: str | None = None):
         model_name = os.getenv("OPENAI_MODEL", "gpt-4o")
         return ChatOpenAI(
             model=model_name,
-            api_key=os.getenv("OPENAI_API_KEY"),
+            api_key=_required_api_key("OPENAI_API_KEY"),
             temperature=0,
         )

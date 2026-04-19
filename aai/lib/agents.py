@@ -23,9 +23,15 @@ from .prompts import (
     ARCHITECT_PROMPT,
     CONTEXT_MANAGER_PROMPT,
     CRITIC_PROMPT,
+    DESIGNER_PROMPT,
+    SINGLE_SHOT_ARCHITECT_PROMPT,
     FILE_SUMMARIZER_PROMPT,
 )
-from .repo_reader import TEXT_SUFFIXES
+from .repo_reader import LangChainChunker, TEXT_SUFFIXES
+from .logging_config import get_logger
+
+# Get module logger
+logger = get_logger(__name__)
 
 # ---------------------------------------------------------------------------
 # Pipeline stage constants
@@ -116,7 +122,10 @@ class Agent:
             SystemMessage(content=self.system_prompt),
             HumanMessage(content=human_content),
         ]
-        response = llm.invoke(messages)
+        try:
+            response = llm.invoke(messages)
+        except Exception as exc:
+            raise RuntimeError(f"LLM call failed: {exc}") from exc
         self.token_use.append(response.usage_metadata)
         return response.content
 
@@ -160,23 +169,9 @@ class FileSummarizer(Agent):
         return super().collect_files(self.repo_path, self._should_include)
 
     def create_chunks(self, all_files: list[dict]) -> list[list[dict]]:
-        """Group files into chunks that fit within the LLM character limit."""
-        chunks: list[list[dict]] = []
-        current_chunk: list[dict] = []
-        current_size = 0
-
-        for file_data in all_files:
-            file_size = len(file_data["content"])
-            if current_size + file_size > self.max_chars_per_chunk and current_chunk:
-                chunks.append(current_chunk)
-                current_chunk = []
-                current_size = 0
-            current_chunk.append(file_data)
-            current_size += file_size
-
-        if current_chunk:
-            chunks.append(current_chunk)
-        return chunks
+        """Create semantically split batches sized for the summarizer context window."""
+        chunker = LangChainChunker(max_chunk_chars=self.max_chars_per_chunk)
+        return chunker.chunk_files(all_files)
 
     def summarize_chunk(self, chunk: list[dict], llm) -> str:
         """Send a chunk of files to the LLM and return the structured summary."""
@@ -426,8 +421,11 @@ class CritiqueAgent(Agent):
                 print(f"Could not read arch_md_path {self.arch_md_path}: {exc}")
         return None
 
-    def critique(self, llm) -> str | None:
-        """Run the Critic LLM on the Mermaid diagram + context and save the critique."""
+    def critique(self, llm, evolved_prompt_path: str | Path | None = None) -> str | None:
+        """Run the Critic LLM on the Mermaid diagram + context and save the critique.
+        
+        If evolved_prompt_path is provided, uses that prompt instead of the base CRITIC_PROMPT.
+        """
         diagrams = self.collect_files()
         context = self.collect_context()
         arch_md = self.load_arch_md()
@@ -435,6 +433,18 @@ class CritiqueAgent(Agent):
         if not diagrams:
             print("No Mermaid diagram found in 03_draft/. Run ArchitectAgent first.")
             return None
+
+        # Load evolved prompt if provided
+        if evolved_prompt_path:
+            try:
+                evolved_path = Path(evolved_prompt_path)
+                if evolved_path.exists():
+                    self.system_prompt = evolved_path.read_text(encoding="utf-8").strip()
+                    print(f"Loaded evolved prompt from {evolved_prompt_path}")
+                else:
+                    print(f"Evolved prompt path not found: {evolved_prompt_path}. Using base prompt.")
+            except Exception as exc:
+                print(f"Could not load evolved prompt: {exc}. Using base prompt.")
 
         parts = []
         if context:
@@ -460,3 +470,21 @@ class CritiqueAgent(Agent):
         critique_text = self.invoke_llm(llm, human_content)
         self.save_md("critique", critique_text)
         return critique_text
+
+
+class SingleShotArchitectAgent(Agent):
+    """Single-call baseline that turns a repository digest into a Mermaid diagram."""
+
+    def __init__(
+        self,
+        output_dir: Path,
+        debug: bool = False,
+        stage: str = STAGES[2],
+    ) -> None:
+        super().__init__(stage=stage, output_dir=output_dir, debug=debug)
+        self.system_prompt = SINGLE_SHOT_ARCHITECT_PROMPT
+
+    def draft_from_digest(self, llm, repo_digest: str) -> str:
+        diagram = self.invoke_llm(llm, repo_digest)
+        self.save_md("mermaid", diagram)
+        return diagram

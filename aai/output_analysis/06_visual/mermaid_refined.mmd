@@ -1,5 +1,69 @@
-graph TD
-    A[Repository] --> B[FileScanner]
-    B --> C[SourceFile]
-    C --> D[load_repo_files]
-    D --> E[load_readme]
+graph TB
+    subgraph Development["Development Environment (macOS)"]
+        DownloadDataset["download_dataset.py<br/>Dataset Acquisition"]
+        EnvConfig[".env Configuration<br/>API Keys & URLs"]
+        
+        %% Unverified components
+        TrainingPipeline["⚠ Model Training<br/>(needs_verification)"]
+        ConversionService["⚠ TFLite Conversion<br/>(needs_verification)"]
+    end
+
+    subgraph JetsonRuntime["Jetson Edge Deployment"]
+        DirectInf["direct_inf.py<br/>Single Image Inference"]
+        TimedRun["timed_run.py<br/>Performance Benchmark"]
+        StreamInf["stream_inf.py<br/>RTSP Stream Processing"]
+        ContainerInf["on_container.py<br/>HTTP Client Demo"]
+    end
+
+    subgraph RubikPiRuntime["Rubik Pi Offline Runtime"]
+        RTSPTFLite["run_rtsp_tflite.py<br/>Offline RTSP Processor"]
+        TFLiteModel["TFLite Model<br/>yolov8s_saved_model"]
+        ModelMetadata["metadata.yaml<br/>(documentation only)"]
+    end
+
+    subgraph ExternalDependencies["External Dependencies"]
+        RoboflowAPI["Roboflow API<br/>(cloud service)"]
+        RTSPCamera["RTSP Camera Stream"]
+        LocalInfServer["⚠ Inference Server<br/>localhost:9001<br/>(deployment unverified)"]
+    end
+
+    %% Development Pipeline (Verified)
+    EnvConfig -->|"API Key (0.95)"| DownloadDataset
+    DownloadDataset -->|"Dataset Download (0.95)"| RoboflowAPI
+
+    %% Development Pipeline (Unverified)
+    DownloadDataset -.->|"assumed input (0.3)"| TrainingPipeline
+    TrainingPipeline -.->|"model export (0.3)"| ConversionService
+    ConversionService -.->|"artifact transfer (0.2)"| TFLiteModel
+
+    %% Jetson Dependencies (Revised Confidence)
+    EnvConfig -->|"API Key (0.9)"| DirectInf
+    EnvConfig -->|"API Key (0.9)"| TimedRun
+    EnvConfig -->|"API Key + RTSP URL (0.95)"| StreamInf
+    
+    DirectInf -->|"SDK Integration<br/>caching unknown (0.7)"| RoboflowAPI
+    TimedRun -->|"SDK Integration<br/>caching unknown (0.7)"| RoboflowAPI
+    StreamInf -->|"SDK Integration<br/>caching unknown (0.75)"| RoboflowAPI
+    StreamInf -->|"Video Stream (0.95)"| RTSPCamera
+    
+    ContainerInf -->|"HTTP Client (0.7)"| LocalInfServer
+    LocalInfServer -.->|"unknown proxy behavior (0.4)"| RoboflowAPI
+
+    %% Rubik Pi Offline Pipeline
+    RTSPTFLite -->|"Model Loading (0.95)"| TFLiteModel
+    RTSPTFLite -->|"Video Stream (0.95)"| RTSPCamera
+
+    %% Styling
+    classDef development fill:#e1f5ff,stroke:#01579b,stroke-width:2px
+    classDef jetson fill:#fff3e0,stroke:#e65100,stroke-width:2px
+    classDef rubikpi fill:#f3e5f5,stroke:#4a148c,stroke-width:2px
+    classDef external fill:#ffebee,stroke:#c62828,stroke-width:2px,stroke-dasharray: 5 5
+    classDef unverified fill:#fafafa,stroke:#757575,stroke-width:1px,stroke-dasharray: 3 3
+    classDef documentation fill:#f1f8e9,stroke:#558b2f,stroke-width:1px
+    
+    class DownloadDataset,EnvConfig development
+    class DirectInf,TimedRun,StreamInf,ContainerInf jetson
+    class RTSPTFLite,TFLiteModel rubikpi
+    class RoboflowAPI,RTSPCamera,LocalInfServer external
+    class TrainingPipeline,ConversionService unverified
+    class ModelMetadata documentation

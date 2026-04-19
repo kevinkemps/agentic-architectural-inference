@@ -1,0 +1,63 @@
+classDiagram
+    class TrafficSimulatorApp {
+        +run()
+    }
+    class SimulationEngine {
+        +start()
+        +stop()
+        +tick()
+    }
+    class SimulationConfig {
+        +getInstance()
+    }
+    class SpawnStrategy {
+        <<interface>>
+        +spawnVehicles()
+    }
+    class SimulationCommand {
+        <<interface>>
+        +execute()
+    }
+    class SimulationObserver {
+        <<interface>>
+        +update()
+    }
+    class TrafficPanel {
+        +render()
+    }
+    class VehicleFactory {
+        +createVehicle()
+    }
+    class SimulationSnapshot {
+        +getState()
+    }
+    class SimulationCommands {
+        +executeCommand()
+    }
+    class SimulationEngineBuilder {
+        +build()
+    }
+    class BiasedSpawnStrategy {
+        +spawnVehicles()
+    }
+    class PaletteColorStrategy {
+        +selectColor()
+    }
+    class ColorStrategy {
+        <<interface>>
+        +selectColor()
+    }
+
+    TrafficSimulatorApp --> SimulationEngine : "manages" 
+    TrafficSimulatorApp --> TrafficPanel : "renders"
+    SimulationEngine --> SimulationConfig : "uses"
+    SimulationEngine --> SpawnStrategy : "uses"
+    SimulationEngine --> SimulationObserver : "notifies"
+    SimulationEngine --> SimulationSnapshot : "provides"
+    SimulationEngine --> SimulationCommands : "executes"
+    SimulationEngineBuilder --> SimulationEngine : "builds"
+    VehicleFactory --> SimulationEngine : "creates vehicles for"
+    BiasedSpawnStrategy --> SpawnStrategy : "implements"
+    PaletteColorStrategy --> ColorStrategy : "implements"
+    TrafficPanel --> SimulationSnapshot : "renders"
+    SimulationCommands --> SimulationCommand : "uses"
