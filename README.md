@@ -113,6 +113,9 @@ Evaluation uses:
 - the fixed core question set in `aai/evaluation/eval_questions.md`
 - an automatically generated repo-specific question set produced from the scanned repository
 
+The evaluation question sets are designed to test architecture-level understanding
+that a high-level diagram can reasonably answer, rather than line-level code detail.
+
 For each run:
 1. The system loads the fixed core questions.
 2. The system generates 5 to 10 repo-specific questions from the repository digest.
