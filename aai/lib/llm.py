@@ -115,6 +115,7 @@ def get_model(provider: str | None = None):
             model=model_name,
             api_key=_required_api_key("ANTHROPIC_API_KEY"),
             temperature=0,
+            cache=None
         )
 
     else:  # 'openai' or any unrecognised value
@@ -123,4 +124,5 @@ def get_model(provider: str | None = None):
             model=model_name,
             api_key=_required_api_key("OPENAI_API_KEY"),
             temperature=0,
+            cache=None
         )
