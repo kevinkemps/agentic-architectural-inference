@@ -17,6 +17,18 @@ The same repository evidence should lead to the same architecture structure acro
 - Use implementation-backed names from the repository when possible.
 - Use a controlled top-level category and a repo-specific module name.
 
+## Coverage Gates (Must Represent If Evidenced)
+
+If any of the following are evidenced in the summaries, represent them explicitly as components/modules/edges instead of omitting them for sparsity:
+
+- Distinct runtime targets or execution environments.
+- Auth/config mechanisms that affect runtime behavior (for example `.env`, environment-variable dependencies).
+- Model format differences across runtimes (for example `.pt` vs `.tflite`).
+- Training/conversion/deployment lineage when transformation evidence exists.
+- Distinct deployment modes inside a runtime (for example API-based mode and local server mode).
+
+When evidence exists but is incomplete, keep the element with conservative labeling and lower confidence instead of dropping it.
+
 ## Allowed Categories
 
 Use only these categories:
@@ -113,6 +125,10 @@ Return exactly one JSON object inside a fenced `json` code block with this shape
 - If a subsystem is unclear, omit the edge or use a cautious component description instead of guessing.
 - Keep the abstraction level consistent across all components in the same output.
 - Use `category` for cross-repo standardization and `module` for repo-specific structure.
+- Prefer concrete repository-backed names over generic placeholders when both are available.
+- Do not collapse multiple evidenced runtime environments into one component.
+- Do not remove an evidenced configuration/auth dependency solely to reduce diagram size.
+- If a conversion relationship is evidenced, include at least one edge that preserves that lineage.
 
 ## Revision Behavior
 
@@ -122,6 +138,7 @@ When critique feedback is provided:
 2. Remove unsupported edges and duplicate components.
 3. Normalize naming, categories, and modules to remain consistent with the allowed schema.
 4. Return the full JSON object again, not a patch.
+5. Preserve evidence-backed coverage components unless critique provides direct contradictory evidence.
 
 ## Output Requirement
 

@@ -9,6 +9,7 @@ from typing import Sequence
 
 TEXT_SUFFIXES = {
     ".py",
+    ".ipynb",
     ".js",
     ".ts",
     ".tsx",
