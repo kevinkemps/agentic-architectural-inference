@@ -104,6 +104,42 @@ def _load_reused_repo_specific_questions(
     return None
 
 
+def _load_reused_repo_answers(
+    *,
+    shared_group_root: str | Path | None,
+    current_run_output_dir: str | Path | None,
+) -> tuple[dict, str | None] | None:
+    if shared_group_root is None:
+        return None
+
+    group_root = Path(shared_group_root)
+    if not group_root.exists() or not group_root.is_dir():
+        return None
+
+    current_output = Path(current_run_output_dir).resolve() if current_run_output_dir else None
+    candidates = sorted(group_root.glob("*/evaluation/repo_answers.json"))
+
+    for candidate in candidates:
+        run_output_dir = candidate.parent.parent.resolve()
+        if current_output is not None and run_output_dir == current_output:
+            continue
+
+        try:
+            payload = json.loads(candidate.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            continue
+
+        answers = payload.get("answers", []) if isinstance(payload, dict) else []
+        if not isinstance(answers, list) or not answers:
+            continue
+
+        raw_path = candidate.parent / "debug_raw_responses" / "repo_answers.raw.txt"
+        raw_text = raw_path.read_text(encoding="utf-8") if raw_path.exists() else None
+        return payload, raw_text
+
+    return None
+
+
 def build_repo_digest(
     repo_path: str | Path,
     *,
@@ -297,13 +333,25 @@ def evaluate_diagram(
     questions = [*core_questions, *repo_specific_questions]
     question_block = "\n".join(f"{index}. {question}" for index, question in enumerate(questions, start=1))
 
-    repo_payload, repo_usage = _invoke_json(
-        llm,
-        EVALUATION_REPO_PROMPT,
-        f"## Questions\n{question_block}\n\n## Repository Digest\n{repo_digest}",
-        step_name="repo_answers",
-        debug_dir=debug_dir,
+    reused_repo_answers = _load_reused_repo_answers(
+        shared_group_root=shared_evaluation_group_dir,
+        current_run_output_dir=current_run_output_dir,
     )
+    if reused_repo_answers is None:
+        repo_payload, repo_usage = _invoke_json(
+            llm,
+            EVALUATION_REPO_PROMPT,
+            f"## Questions\n{question_block}\n\n## Repository Digest\n{repo_digest}",
+            step_name="repo_answers",
+            debug_dir=debug_dir,
+        )
+    else:
+        repo_payload, reused_raw_text = reused_repo_answers
+        repo_usage = TokenStats()
+        if reused_raw_text is None:
+            reused_raw_text = json.dumps(repo_payload, indent=2)
+        _write_raw_response(debug_dir=debug_dir, step_name="repo_answers", raw_text=reused_raw_text)
+
     diagram_payload, diagram_usage = _invoke_json(
         llm,
         EVALUATION_DIAGRAM_PROMPT,
