@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 from dataclasses import dataclass
 from pathlib import Path
@@ -63,6 +64,74 @@ def _looks_text(data: bytes) -> bool:
     return b"\x00" not in data
 
 
+def _normalize_notebook_source(source: object) -> str:
+    if isinstance(source, str):
+        return source
+    if isinstance(source, list):
+        return "".join(str(part) for part in source)
+    return ""
+
+
+def _extract_notebook_source(text: str) -> str:
+    try:
+        payload = json.loads(text)
+    except json.JSONDecodeError:
+        return ""
+
+    cells = payload.get("cells")
+    if not isinstance(cells, list):
+        return ""
+
+    extracted_cells: list[str] = []
+    for index, cell in enumerate(cells, start=1):
+        if not isinstance(cell, dict):
+            continue
+
+        cell_type = str(cell.get("cell_type", "")).lower()
+        if cell_type not in {"markdown", "code"}:
+            continue
+
+        source_text = _normalize_notebook_source(cell.get("source")).strip()
+        if not source_text:
+            continue
+
+        extracted_cells.append(f"## Cell {index} ({cell_type})\n{source_text}")
+
+    return "\n\n".join(extracted_cells)
+
+
+def read_source_file(path: str | Path, max_chars_per_file: int | None = None) -> str | None:
+    """Read a source file and normalize notebook content to source-only text."""
+    path = Path(path)
+    suffix = path.suffix.lower()
+
+    if suffix == ".ipynb":
+        try:
+            notebook_text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            return None
+
+        extracted = _extract_notebook_source(notebook_text)
+        if max_chars_per_file is not None:
+            return extracted[:max_chars_per_file]
+        return extracted
+
+    try:
+        if max_chars_per_file is None:
+            raw = path.read_bytes()
+        else:
+            raw = path.read_bytes()[: max_chars_per_file * 2]
+        if not _looks_text(raw):
+            return None
+        text = raw.decode("utf-8", errors="replace")
+    except OSError:
+        return None
+
+    if max_chars_per_file is not None:
+        return text[:max_chars_per_file]
+    return text
+
+
 def load_repo_files(
     repo_path: str | Path,
     max_files: int = 120,
@@ -79,12 +148,8 @@ def load_repo_files(
             path = Path(dirpath) / filename
             if path.suffix.lower() not in TEXT_SUFFIXES:
                 continue
-            try:
-                raw = path.read_bytes()[: max_chars_per_file * 2]
-                if not _looks_text(raw):
-                    continue
-                text = raw.decode("utf-8", errors="replace")[:max_chars_per_file]
-            except OSError:
+            text = read_source_file(path, max_chars_per_file=max_chars_per_file)
+            if text is None:
                 continue
             files.append(SourceFile(path=str(path.relative_to(root)), content=text))
 

@@ -23,11 +23,10 @@ from .prompts import (
     ARCHITECT_PROMPT,
     CONTEXT_MANAGER_PROMPT,
     CRITIC_PROMPT,
-    DESIGNER_PROMPT,
     SINGLE_SHOT_ARCHITECT_PROMPT,
     FILE_SUMMARIZER_PROMPT,
 )
-from .repo_reader import LangChainChunker, TEXT_SUFFIXES
+from .repo_reader import LangChainChunker, TEXT_SUFFIXES, read_source_file
 from .logging_config import get_logger
 from .architecture_schema import (
     canonicalize_architecture,
@@ -112,17 +111,16 @@ class Agent:
             for file in sorted(files):
                 full_path = os.path.join(root, file)
                 if filter_fxn(file):
-                    try:
-                        with open(full_path, "r", encoding="utf-8") as fh:
-                            content = fh.read()
-                            all_files.append(
-                                {
-                                    "path": os.path.relpath(full_path, source_path),
-                                    "content": content,
-                                }
-                            )
-                    except Exception as exc:
-                        print(f"Could not read {full_path}: {exc}")
+                    content = read_source_file(Path(full_path))
+                    if content is None:
+                        print(f"Could not read {full_path}")
+                        continue
+                    all_files.append(
+                        {
+                            "path": os.path.relpath(full_path, source_path),
+                            "content": content,
+                        }
+                    )
         return all_files
 
     def calculate_total_size(self, items: list[str]) -> int:

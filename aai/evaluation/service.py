@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import json
 import re
+import uuid
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
-if __package__:
+try:
     from ..lib.prompts import (
         EVALUATION_DIAGRAM_PROMPT,
         EVALUATION_JUDGE_PROMPT,
@@ -15,7 +16,7 @@ if __package__:
         EVALUATION_REPO_PROMPT,
     )
     from ..lib.repo_reader import load_readme, load_repo_files
-else:  # pragma: no cover - supports running from inside aai/
+except ImportError:  # pragma: no cover - supports running from inside aai/
     from lib.prompts import (  # type: ignore[no-redef]
         EVALUATION_DIAGRAM_PROMPT,
         EVALUATION_JUDGE_PROMPT,
@@ -80,15 +81,19 @@ def build_repo_digest(
         max_files=max_files,
         max_chars_per_file=max_chars_per_file,
     )
+    non_notebook_files = [source for source in files if not source.path.lower().endswith(".ipynb")]
 
     digest_parts = []
     if readme:
         digest_parts.append(f"## README\n{readme[:6000]}")
 
-    file_list = "\n".join(f"- {source.path}" for source in files)
+    if non_notebook_files:
+        file_list = "\n".join(f"- {source.path}" for source in non_notebook_files)
+    else:
+        file_list = "- (no non-notebook files were sampled for evaluation digest)"
     digest_parts.append(f"## Sampled Files\n{file_list}")
 
-    for source in files:
+    for source in non_notebook_files:
         digest_parts.append(f"## FILE: {source.path}\n{source.content}")
 
     return "\n\n".join(digest_parts)
@@ -111,24 +116,79 @@ def _add_usage(left: TokenStats, right: TokenStats) -> TokenStats:
     )
 
 
-def _extract_json(text: str) -> dict:
+def _raw_response_debug_dir(output_dir: str | Path | None) -> Path:
+    if output_dir is not None:
+        return Path(output_dir) / "debug_raw_responses"
+    return Path("/tmp") / "aai_eval_debug" / uuid.uuid4().hex
+
+
+def _response_text(content: object) -> str:
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts = []
+        for item in content:
+            if isinstance(item, dict) and "text" in item:
+                parts.append(str(item["text"]))
+            else:
+                parts.append(str(item))
+        return "\n".join(parts)
+    return str(content)
+
+
+def _write_raw_response(*, debug_dir: Path, step_name: str, raw_text: str) -> None:
+    debug_dir.mkdir(parents=True, exist_ok=True)
+    (debug_dir / f"{step_name}.raw.txt").write_text(raw_text, encoding="utf-8")
+
+
+def _extract_json(text: str, *, step_name: str) -> dict:
+    parse_errors: list[json.JSONDecodeError] = []
+
     try:
         return json.loads(text)
-    except json.JSONDecodeError:
-        match = re.search(r"\{.*\}", text, re.DOTALL)
-        if not match:
-            raise RuntimeError("LLM response did not contain JSON.")
-        return json.loads(match.group(0))
+    except json.JSONDecodeError as exc:
+        parse_errors.append(exc)
+
+    for match in re.finditer(r"```json\s*(\{.*?\})\s*```", text, re.IGNORECASE | re.DOTALL):
+        candidate = match.group(1).strip()
+        try:
+            return json.loads(candidate)
+        except json.JSONDecodeError as exc:
+            parse_errors.append(exc)
+
+    for match in re.finditer(r"\{.*?\}", text, re.DOTALL):
+        candidate = match.group(0).strip()
+        try:
+            return json.loads(candidate)
+        except json.JSONDecodeError as exc:
+            parse_errors.append(exc)
+
+    message = (
+        f"Failed to parse JSON for evaluation step '{step_name}'. "
+        "Tried strict JSON, fenced json blocks, and object extraction."
+    )
+    if parse_errors:
+        raise RuntimeError(message) from parse_errors[-1]
+    raise RuntimeError(message)
 
 
-def _invoke_json(llm, system_prompt: str, human_content: str) -> tuple[dict, TokenStats]:
+def _invoke_json(
+    llm,
+    system_prompt: str,
+    human_content: str,
+    *,
+    step_name: str,
+    debug_dir: Path,
+) -> tuple[dict, TokenStats]:
     response = llm.invoke(
         [
             SystemMessage(content=system_prompt),
             HumanMessage(content=human_content),
         ]
     )
-    return _extract_json(response.content), _usage_from_response(response)
+    raw_text = _response_text(getattr(response, "content", ""))
+    _write_raw_response(debug_dir=debug_dir, step_name=step_name, raw_text=raw_text)
+    return _extract_json(raw_text, step_name=step_name), _usage_from_response(response)
 
 
 def generate_repo_specific_questions(
@@ -136,6 +196,7 @@ def generate_repo_specific_questions(
     repo_digest: str,
     core_questions: list[str],
     llm,
+    debug_dir: Path,
 ) -> tuple[list[str], TokenStats]:
     core_question_block = "\n".join(
         f"{index}. {question}" for index, question in enumerate(core_questions, start=1)
@@ -147,6 +208,8 @@ def generate_repo_specific_questions(
             f"## Fixed Core Questions\n{core_question_block}\n\n"
             f"## Repository Digest\n{repo_digest}"
         ),
+        step_name="question_generator",
+        debug_dir=debug_dir,
     )
     raw_questions = payload.get("questions", [])
     cleaned_questions: list[str] = []
@@ -180,10 +243,12 @@ def evaluate_diagram(
 ) -> EvaluationResult:
     core_questions = load_questions(questions_path)
     repo_digest = build_repo_digest(repo_path)
+    debug_dir = _raw_response_debug_dir(output_dir)
     repo_specific_questions, question_usage = generate_repo_specific_questions(
         repo_digest=repo_digest,
         core_questions=core_questions,
         llm=llm,
+        debug_dir=debug_dir,
     )
     questions = [*core_questions, *repo_specific_questions]
     question_block = "\n".join(f"{index}. {question}" for index, question in enumerate(questions, start=1))
@@ -192,11 +257,15 @@ def evaluate_diagram(
         llm,
         EVALUATION_REPO_PROMPT,
         f"## Questions\n{question_block}\n\n## Repository Digest\n{repo_digest}",
+        step_name="repo_answers",
+        debug_dir=debug_dir,
     )
     diagram_payload, diagram_usage = _invoke_json(
         llm,
         EVALUATION_DIAGRAM_PROMPT,
         f"## Questions\n{question_block}\n\n## Mermaid Diagram\n{diagram_text}",
+        step_name="diagram_answers",
+        debug_dir=debug_dir,
     )
     judge_payload, judge_usage = _invoke_json(
         llm,
@@ -206,6 +275,8 @@ def evaluate_diagram(
             f"## Repository Answers\n{json.dumps(repo_payload, indent=2)}\n\n"
             f"## Diagram Answers\n{json.dumps(diagram_payload, indent=2)}"
         ),
+        step_name="judge",
+        debug_dir=debug_dir,
     )
 
     question_scores = judge_payload.get("questions", [])
