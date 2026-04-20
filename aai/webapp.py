@@ -330,12 +330,26 @@ def _html_page() -> str:
       overflow: auto;
     }
     .score {
-      display: inline-flex;
+      display: flex;
       align-items: baseline;
-      gap: 8px;
+      gap: 10px;
+      margin-bottom: 2px;
+    }
+    .score-value {
       font-size: 3rem;
-      letter-spacing: -0.05em;
+      line-height: 1;
+      letter-spacing: -0.03em;
       color: var(--accent-2);
+      font-variant-numeric: tabular-nums;
+    }
+    .score-label {
+      font-size: 1.9rem;
+      line-height: 1;
+      letter-spacing: 0;
+      color: #6a6258;
+    }
+    .score-secondary {
+      margin-top: 0.35rem;
     }
     .meta {
       display: grid;
@@ -399,6 +413,7 @@ def _html_page() -> str:
         <label>Mode</label>
         <div class="toggle"><input id="multiAgent" type="checkbox" checked> <span>Use multi-agent pipeline</span></div>
         <div class="toggle"><input id="critic" type="checkbox" checked> <span>Enable critic loop</span></div>
+        <div class="toggle"><input id="singleShotTestMode" type="checkbox"> <span>Single-shot test mode (one run only)</span></div>
         <div class="toggle"><input id="debugMode" type="checkbox"> <span>Debug mode: run single-shot, critic off, and critic on</span></div>
         <button id="runButton" class="run">Generate Diagram + Score</button>
         <button id="saveButton" class="save hidden">Save Analysis JSON</button>
@@ -426,6 +441,7 @@ def _html_page() -> str:
     const saveButton = document.getElementById("saveButton");
     const multiAgent = document.getElementById("multiAgent");
     const critic = document.getElementById("critic");
+    const singleShotTestMode = document.getElementById("singleShotTestMode");
     const debugMode = document.getElementById("debugMode");
     const repoPath = document.getElementById("repoPath");
     let currentAnalysisExport = null;
@@ -440,15 +456,25 @@ def _html_page() -> str:
     });
 
     function syncControlState() {
+      const singleShotTestEnabled = singleShotTestMode.checked;
       const debugEnabled = debugMode.checked;
-      multiAgent.disabled = debugEnabled;
-      critic.disabled = debugEnabled || !multiAgent.checked;
+      multiAgent.disabled = debugEnabled || singleShotTestEnabled;
+      critic.disabled = debugEnabled || singleShotTestEnabled || !multiAgent.checked;
+      debugMode.disabled = singleShotTestEnabled;
+
+      if (singleShotTestEnabled) {
+        multiAgent.checked = false;
+        critic.checked = false;
+        debugMode.checked = false;
+      }
+
       if (!multiAgent.checked) {
         critic.checked = false;
       }
     }
 
     multiAgent.addEventListener("change", syncControlState);
+    singleShotTestMode.addEventListener("change", syncControlState);
     debugMode.addEventListener("change", syncControlState);
     syncControlState();
 
@@ -473,11 +499,13 @@ def _html_page() -> str:
         const criticHighlight = run.critic_highlight
           ? `<div class="highlight"><strong>Biggest critic-driven change</strong><br>${escapeHtml(run.critic_highlight)}</div>`
           : "";
+        const coreScore = run.evaluation.core_overall_score ?? run.evaluation.scorecard?.core_only?.overall_score;
 
         return `
           <section class="run-section">
             <h3>${escapeHtml(run.label)}</h3>
-            <div class="score">${run.evaluation.overall_score.toFixed(1)} <span style="font-size:1rem;color:#6a6258;">/ 100</span></div>
+            <div class="score"><span class="score-value">${run.evaluation.overall_score.toFixed(1)}</span><span class="score-label">/ 100 combined</span></div>
+            <div class="score score-secondary"><span class="score-value">${Number(coreScore || 0).toFixed(1)}</span><span class="score-label">/ 100 core only</span></div>
             <p>${escapeHtml(run.evaluation.summary || "No summary returned.")}</p>
             ${criticHighlight}
             <div class="meta">
@@ -486,6 +514,7 @@ def _html_page() -> str:
               <div class="card"><strong>Latency</strong><br>${run.pipeline.total_duration_seconds.toFixed(2)}s</div>
               <div class="card"><strong>Pipeline Tokens</strong><br>${run.pipeline.total_tokens.total_tokens}</div>
               <div class="card"><strong>Evaluation Tokens</strong><br>${run.evaluation.token_stats.total_tokens}</div>
+              <div class="card"><strong>Core Score</strong><br>${Number(coreScore || 0).toFixed(1)} / 100</div>
               <div class="card"><strong>Saved JSON</strong><br>${escapeHtml(run.analysis_json_path || "n/a")}</div>
             </div>
             <h3>Question Scores</h3>
@@ -544,6 +573,7 @@ def _html_page() -> str:
         repo_path: repoPath.value.trim(),
         use_multi_agent: multiAgent.checked,
         use_critic: critic.checked,
+        single_shot_test_mode: singleShotTestMode.checked,
         debug_mode: debugMode.checked,
       };
       if (!payload.repo_path) {
@@ -609,10 +639,34 @@ class AppHandler(BaseHTTPRequestHandler):
             repo_path = str(payload["repo_path"]).strip()
             use_multi_agent = bool(payload.get("use_multi_agent", True))
             use_critic = bool(payload.get("use_critic", True))
+            single_shot_test_mode = bool(payload.get("single_shot_test_mode", False))
             debug_mode = bool(payload.get("debug_mode", False))
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-            if debug_mode:
+            if single_shot_test_mode:
+              run_dir = RUNS_ROOT / f"{timestamp}_single_shot_test"
+              run_payload = _execute_run(
+                label="Single Shot Test",
+                repo_path=repo_path,
+                out_dir=run_dir,
+                mode="single_prompt",
+                critic_rounds=0,
+              )
+              analysis_export = _build_analysis_export(
+                [run_payload],
+                repo_path=repo_path,
+                debug_mode=False,
+              )
+              analysis_json_path = Path(run_payload["analysis_json_path"])
+              _write_json(analysis_json_path, analysis_export)
+              response = {
+                "debug_mode": False,
+                "single_shot_test_mode": True,
+                "runs": [run_payload],
+                "analysis_export": analysis_export,
+                "analysis_json_path": str(analysis_json_path),
+              }
+            elif debug_mode:
                 run_root = RUNS_ROOT / f"{timestamp}_debug_compare"
                 run_payloads = [
                     _execute_run(

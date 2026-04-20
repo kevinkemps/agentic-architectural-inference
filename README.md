@@ -98,6 +98,7 @@ The UI supports:
 - repo path input
 - multi-agent vs single-prompt mode
 - critic on/off
+- single-shot test mode that runs one single_prompt validation run
 - debug comparison mode that runs single-shot, critic-off, and critic-on together
 - diagram rendering
 - per-question evaluation scores
@@ -118,6 +119,7 @@ For each run:
 4. The model answers the same combined question set from the generated Mermaid diagram only.
 5. A judge model compares the two answer sets and scores each question from `0` to `5`.
 6. The overall score is normalized to `0-100`.
+7. The scorecard also includes a separate core-only score section based only on the fixed core questions.
 
 This supports:
 - RQ1: compare multi-agent runs against `--mode single_prompt`
@@ -156,6 +158,8 @@ Each run contains:
     scorecard.json
     analysis_summary.json
 ```
+
+  The `scorecard.json` file includes both a combined score section and a core-only score section so you can compare the full evaluation against the core questions alone.
 
 Some directories remain empty for `single_prompt` runs or when the critic is disabled.
 Debug comparison runs also write a combined `debug_analysis.json` file at the run root.
