@@ -69,6 +69,41 @@ def _write_question_markdown(path: Path, title: str, questions: list[str]) -> No
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
+def _parse_numbered_questions(text: str) -> list[str]:
+    questions: list[str] = []
+    for line in text.splitlines():
+        match = re.match(r"^\s*\d+\.\s+(.*\S)\s*$", line)
+        if match:
+            questions.append(match.group(1))
+    return questions
+
+
+def _load_reused_repo_specific_questions(
+    *,
+    shared_group_root: str | Path | None,
+    current_run_output_dir: str | Path | None,
+) -> list[str] | None:
+    if shared_group_root is None:
+        return None
+
+    group_root = Path(shared_group_root)
+    if not group_root.exists() or not group_root.is_dir():
+        return None
+
+    current_output = Path(current_run_output_dir).resolve() if current_run_output_dir else None
+    candidates = sorted(group_root.glob("*/evaluation/repo_specific_eval_questions.md"))
+
+    for candidate in candidates:
+        run_output_dir = candidate.parent.parent.resolve()
+        if current_output is not None and run_output_dir == current_output:
+            continue
+        parsed = _parse_numbered_questions(candidate.read_text(encoding="utf-8"))
+        if len(parsed) >= 5:
+            return parsed
+
+    return None
+
+
 def build_repo_digest(
     repo_path: str | Path,
     *,
@@ -240,16 +275,25 @@ def evaluate_diagram(
     llm,
     questions_path: str | Path | None = None,
     output_dir: str | Path | None = None,
+    shared_evaluation_group_dir: str | Path | None = None,
 ) -> EvaluationResult:
     core_questions = load_questions(questions_path)
     repo_digest = build_repo_digest(repo_path)
     debug_dir = _raw_response_debug_dir(output_dir)
-    repo_specific_questions, question_usage = generate_repo_specific_questions(
-        repo_digest=repo_digest,
-        core_questions=core_questions,
-        llm=llm,
-        debug_dir=debug_dir,
+    current_run_output_dir = Path(output_dir).parent if output_dir is not None else None
+    repo_specific_questions = _load_reused_repo_specific_questions(
+        shared_group_root=shared_evaluation_group_dir,
+        current_run_output_dir=current_run_output_dir,
     )
+    if repo_specific_questions is None:
+        repo_specific_questions, question_usage = generate_repo_specific_questions(
+            repo_digest=repo_digest,
+            core_questions=core_questions,
+            llm=llm,
+            debug_dir=debug_dir,
+        )
+    else:
+        question_usage = TokenStats()
     questions = [*core_questions, *repo_specific_questions]
     question_block = "\n".join(f"{index}. {question}" for index, question in enumerate(questions, start=1))
 
