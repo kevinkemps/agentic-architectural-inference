@@ -37,6 +37,7 @@ coverage.xml
 # Logs
 *.log
 ipy_nb/output_analysis
+aai/output_analysis/runs/
 
 # Misc
 Thumbs.db

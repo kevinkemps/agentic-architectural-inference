@@ -34,14 +34,23 @@ class TokenStats:
 
 
 @dataclass
+class ScorecardSection:
+    question_count: int
+    overall_score: float
+    questions: list[dict]
+
+
+@dataclass
 class EvaluationResult:
     questions: list[dict]
     overall_score: float
+    core_overall_score: float
     summary: str
     core_questions: list[str]
     repo_specific_questions: list[str]
     repo_answers: list[dict]
     diagram_answers: list[dict]
+    scorecard: dict[str, ScorecardSection]
     token_stats: TokenStats
 
     def to_dict(self) -> dict:
@@ -186,7 +195,12 @@ def _add_usage(left: TokenStats, right: TokenStats) -> TokenStats:
         total_tokens=left.total_tokens + right.total_tokens,
     )
 
-
+def _score_questions(question_scores: list[dict]) -> float:
+    if not question_scores:
+        return 0.0
+    total_score = sum(int(item.get("score", 0) or 0) for item in question_scores)
+    return (total_score / (len(question_scores) * 5)) * 100
+  
 def _raw_response_debug_dir(output_dir: str | Path | None) -> Path:
     if output_dir is not None:
         return Path(output_dir) / "debug_raw_responses"
@@ -375,8 +389,12 @@ def evaluate_diagram(
     if not question_scores:
         raise RuntimeError("Evaluation judge returned no question scores.")
 
-    total_score = sum(int(item.get("score", 0) or 0) for item in question_scores)
-    overall_score = (total_score / (len(question_scores) * 5)) * 100
+    if len(question_scores) < len(core_questions):
+        raise RuntimeError("Evaluation judge returned fewer scores than core questions.")
+
+    core_question_scores = question_scores[: len(core_questions)]
+    overall_score = _score_questions(question_scores)
+    core_overall_score = _score_questions(core_question_scores)
     usage_totals = _add_usage(
         _add_usage(_add_usage(question_usage, repo_usage), diagram_usage),
         judge_usage,
@@ -385,11 +403,24 @@ def evaluate_diagram(
     result = EvaluationResult(
         questions=question_scores,
         overall_score=overall_score,
+        core_overall_score=core_overall_score,
         summary=str(judge_payload.get("summary", "")).strip(),
         core_questions=core_questions,
         repo_specific_questions=repo_specific_questions,
         repo_answers=repo_payload.get("answers", []),
         diagram_answers=diagram_payload.get("answers", []),
+        scorecard={
+            "combined": ScorecardSection(
+                question_count=len(question_scores),
+                overall_score=overall_score,
+                questions=question_scores,
+            ),
+            "core_only": ScorecardSection(
+                question_count=len(core_question_scores),
+                overall_score=core_overall_score,
+                questions=core_question_scores,
+            ),
+        },
         token_stats=usage_totals,
     )
 
