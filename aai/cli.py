@@ -18,7 +18,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--repo-path",
-        default="../code_base",
+        default="./code_base",
         help="Path to the repository to analyse.",
     )
     parser.add_argument(

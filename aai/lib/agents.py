@@ -23,12 +23,17 @@ from .prompts import (
     ARCHITECT_PROMPT,
     CONTEXT_MANAGER_PROMPT,
     CRITIC_PROMPT,
-    DESIGNER_PROMPT,
     SINGLE_SHOT_ARCHITECT_PROMPT,
     FILE_SUMMARIZER_PROMPT,
 )
-from .repo_reader import LangChainChunker, TEXT_SUFFIXES
+from .repo_reader import LangChainChunker, TEXT_SUFFIXES, read_source_file
 from .logging_config import get_logger
+from .architecture_schema import (
+    canonicalize_architecture,
+    extract_architecture_payload,
+    render_architecture_markdown,
+    save_architecture_json,
+)
 
 # Get module logger
 logger = get_logger(__name__)
@@ -82,6 +87,16 @@ class Agent:
         except Exception as exc:
             print(f"save_md error ({exc}): could not write {dest}")
 
+    def save_stage_file(self, filename: str, data: str, suffix: str) -> None:
+        """Write text output to the current stage directory with an explicit suffix."""
+        dest = self.output_dir / self.stage / f"{filename}{suffix}"
+        try:
+            print(f"saving to {dest}")
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            dest.write_text(data, encoding="utf-8")
+        except Exception as exc:
+            print(f"save_stage_file error ({exc}): could not write {dest}")
+
     def collect_files(self, source_path: Path | str, filter_fxn: Callable[[str], bool]) -> list[dict]:
         """Walk *source_path* and return all readable files matching *filter_fxn*.
 
@@ -89,23 +104,23 @@ class Agent:
         ``'content'``.  Hidden directories (starting with ``'.'``) are skipped.
         """
         all_files: list[dict] = []
-        for root, _, files in os.walk(source_path):
+        for root, dirnames, files in os.walk(source_path):
             if "/." in root:
                 continue
-            for file in files:
+            dirnames[:] = sorted(dirnames)
+            for file in sorted(files):
                 full_path = os.path.join(root, file)
                 if filter_fxn(file):
-                    try:
-                        with open(full_path, "r", encoding="utf-8") as fh:
-                            content = fh.read()
-                            all_files.append(
-                                {
-                                    "path": os.path.relpath(full_path, source_path),
-                                    "content": content,
-                                }
-                            )
-                    except Exception as exc:
-                        print(f"Could not read {full_path}: {exc}")
+                    content = read_source_file(Path(full_path))
+                    if content is None:
+                        print(f"Could not read {full_path}")
+                        continue
+                    all_files.append(
+                        {
+                            "path": os.path.relpath(full_path, source_path),
+                            "content": content,
+                        }
+                    )
         return all_files
 
     def calculate_total_size(self, items: list[str]) -> int:
@@ -227,7 +242,7 @@ class ContextManager(Agent):
 
     def reduce(self, summaries: list[str], llm) -> list[str]:
         """Recursively shrink summaries until the total size fits the threshold."""
-        current_summaries = summaries
+        current_summaries = list(summaries)
 
         while self.calculate_total_size(current_summaries) > self.architect_threshold:
             print(
@@ -255,20 +270,20 @@ class ContextManager(Agent):
 # ---------------------------------------------------------------------------
 
 class ArchitectAgent(Agent):
-    """Stage 3 – produces and refines a Mermaid architecture diagram.
+    """Stage 3 – produces and refines a standardized architecture diagram.
 
     ``draft(llm)``:
       - Reads aggregated summaries from ``02_aggregate/``
       - Optionally incorporates an external reference ``.md`` file
-      - Produces an initial Mermaid diagram
-      - Saves output to ``03_draft/mermaid.md``
+      - Produces a canonical architecture JSON spec
+      - Saves output to ``03_draft/architecture.json`` and ``03_draft/mermaid.md``
 
     ``revise(llm, arch_md_path=None)``:
       - Reads the draft diagram from ``03_draft/``
       - Reads the critique from ``04_critique/``
       - Reads original aggregated context from ``02_aggregate/`` (source of truth)
       - Optionally incorporates an external reference ``.md`` file
-      - Saves the refined output to ``05_refined/mermaid.md``
+      - Saves the refined output to ``05_refined/architecture.json`` and ``05_refined/mermaid.md``
     """
 
     def __init__(
@@ -298,8 +313,16 @@ class ArchitectAgent(Agent):
                 print(f"Could not read arch_md_path {self.arch_md_path}: {exc}")
         return None
 
+    def _save_canonical_outputs(self, response_text: str) -> str:
+        payload = extract_architecture_payload(response_text)
+        canonical = canonicalize_architecture(payload)
+        save_architecture_json(self.output_dir / self.stage / "architecture.json", canonical)
+        markdown = render_architecture_markdown(canonical)
+        self.save_md("mermaid", markdown)
+        return markdown
+
     def draft(self, llm) -> str | None:
-        """Generate the initial Mermaid architecture diagram from aggregated summaries."""
+        """Generate the initial standardized architecture diagram from aggregated summaries."""
         self.stage = STAGES[2]  # 03_draft
         summaries = self.collect_files()
         arch_md = self.load_arch_md()
@@ -320,9 +343,9 @@ class ArchitectAgent(Agent):
         human_content = "\n\n---\n\n".join(parts)
 
         print(f"Running ArchitectAgent draft on {len(summaries)} summary file(s)...")
-        diagram = self.invoke_llm(llm, human_content)
-        self.save_md("mermaid", diagram)
-        return diagram
+        response_text = self.invoke_llm(llm, human_content)
+        self.save_md("response", response_text)
+        return self._save_canonical_outputs(response_text)
 
     def revise(self, llm, arch_md_path: str | Path | None = None) -> str | None:
         """Refine the Mermaid diagram using critic feedback."""
@@ -332,6 +355,7 @@ class ArchitectAgent(Agent):
 
         summaries = self.collect_files()  # 02_aggregate/
         drafts = super().collect_files(self.draft_path, lambda f: f.endswith(".md"))
+        draft_specs = super().collect_files(self.draft_path, lambda f: f.endswith(".json"))
         critiques = super().collect_files(self.critique_path, lambda f: f.endswith(".md"))
         arch_md = self.load_arch_md()
 
@@ -355,6 +379,12 @@ class ArchitectAgent(Agent):
         )
         parts.append(f"## Current Mermaid Diagram (Draft)\n{draft_text}")
 
+        if draft_specs:
+            spec_text = "\n\n".join(
+                f"--- FILE: {f['path']} ---\n{f['content']}" for f in draft_specs
+            )
+            parts.append(f"## Current Canonical Architecture Spec\n{spec_text}")
+
         critique_text = "\n\n".join(
             f"--- FILE: {f['path']} ---\n{f['content']}" for f in critiques
         )
@@ -369,9 +399,9 @@ class ArchitectAgent(Agent):
             f"Running ArchitectAgent revision with {len(critiques)} critique(s) "
             f"and {len(summaries)} summary file(s)..."
         )
-        refined = self.invoke_llm(llm, human_content)
-        self.save_md("mermaid", refined)
-        return refined
+        response_text = self.invoke_llm(llm, human_content)
+        self.save_md("response", response_text)
+        return self._save_canonical_outputs(response_text)
 
 
 # ---------------------------------------------------------------------------
@@ -412,6 +442,10 @@ class CritiqueAgent(Agent):
         """Read aggregated subsystem summaries for cross-referencing architectural claims."""
         return super().collect_files(self.agg_path, lambda f: f.endswith(".md"))
 
+    def collect_spec(self) -> list[dict]:
+        """Read the canonical architecture spec from the draft stage when available."""
+        return super().collect_files(self.draft_path, lambda f: f.endswith(".json"))
+
     def load_arch_md(self) -> str | None:
         """Optionally load an external architecture ``.md`` file for the critic to investigate."""
         if self.arch_md_path:
@@ -428,6 +462,7 @@ class CritiqueAgent(Agent):
         """
         diagrams = self.collect_files()
         context = self.collect_context()
+        specs = self.collect_spec()
         arch_md = self.load_arch_md()
 
         if not diagrams:
@@ -458,6 +493,12 @@ class CritiqueAgent(Agent):
         )
         parts.append(f"## Candidate Architecture (Mermaid Diagram)\n{diagram_text}")
 
+        if specs:
+            spec_text = "\n\n".join(
+                f"--- FILE: {f['path']} ---\n{f['content']}" for f in specs
+            )
+            parts.append(f"## Candidate Canonical Architecture Spec\n{spec_text}")
+
         if arch_md:
             parts.append(f"## Reference Architecture (.md file)\n{arch_md}")
 
@@ -473,7 +514,7 @@ class CritiqueAgent(Agent):
 
 
 class SingleShotArchitectAgent(Agent):
-    """Single-call baseline that turns a repository digest into a Mermaid diagram."""
+    """Single-call baseline that turns a repository digest into a standardized architecture diagram."""
 
     def __init__(
         self,
@@ -485,6 +526,11 @@ class SingleShotArchitectAgent(Agent):
         self.system_prompt = SINGLE_SHOT_ARCHITECT_PROMPT
 
     def draft_from_digest(self, llm, repo_digest: str) -> str:
-        diagram = self.invoke_llm(llm, repo_digest)
-        self.save_md("mermaid", diagram)
-        return diagram
+        response_text = self.invoke_llm(llm, repo_digest)
+        self.save_md("response", response_text)
+        payload = extract_architecture_payload(response_text)
+        canonical = canonicalize_architecture(payload)
+        save_architecture_json(self.output_dir / self.stage / "architecture.json", canonical)
+        markdown = render_architecture_markdown(canonical)
+        self.save_md("mermaid", markdown)
+        return markdown

@@ -7,6 +7,7 @@ Generate high-level architecture diagrams from source code with either a staged 
 Input: a local repository path
 
 Outputs per run:
+- canonical architecture JSON
 - draft Mermaid diagram
 - refined Mermaid diagram when the critic is enabled
 - rendered Mermaid assets when `mmdc` is available
@@ -25,6 +26,7 @@ aai/
     service.py
   lib/
     agents.py
+    architecture_schema.py
     llm.py
     logging_config.py
     mermaid_renderer.py
@@ -112,6 +114,9 @@ Evaluation uses:
 - the fixed core question set in `aai/evaluation/eval_questions.md`
 - an automatically generated repo-specific question set produced from the scanned repository
 
+The evaluation question sets are designed to test architecture-level understanding
+that a high-level diagram can reasonably answer, rather than line-level code detail.
+
 For each run:
 1. The system loads the fixed core questions.
 2. The system generates 5 to 10 repo-specific questions from the repository digest.
@@ -139,10 +144,12 @@ Each run contains:
   01_scout/
   02_aggregate/
   03_draft/
+    architecture.json
     mermaid.md
   04_critique/
     critique.md
   05_refined/
+    architecture.json
     mermaid.md
   06_visual/
     mermaid_draft.mmd
@@ -167,5 +174,6 @@ Debug comparison runs also write a combined `debug_analysis.json` file at the ru
 ## Notes
 
 - Prompt behavior lives in `prompts/*.md`.
+- Diagram generation is standardized by having the architect emit a canonical architecture JSON spec with controlled categories and repo-specific modules, then rendering Mermaid deterministically from that spec.
 - Mermaid rendering requires `mmdc`. If Chromium is missing, the renderer attempts a Playwright install and retries.
 - The current environment shows warnings with Python 3.14 from `langchain_core`; Python 3.10-3.12 is the safer target for actual runs.

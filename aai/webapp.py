@@ -125,6 +125,7 @@ def _execute_run(
     out_dir: Path,
     mode: str,
     critic_rounds: int,
+    shared_evaluation_group_dir: Path | None = None,
 ) -> dict:
     pipeline_result = run_pipeline_with_details(
         repo_path=repo_path,
@@ -144,6 +145,7 @@ def _execute_run(
         diagram_text=diagram_text,
         llm=get_model(),
         output_dir=evaluation_dir,
+        shared_evaluation_group_dir=shared_evaluation_group_dir,
     )
 
     svg_path = _selected_svg_path(pipeline_result.rendered_assets)
@@ -157,7 +159,7 @@ def _execute_run(
     run_payload = {
         "label": label,
         "pipeline": pipeline_result.to_dict(),
-        "evaluation": evaluation_result.to_dict(),
+      "evaluation": evaluation_result.to_dict(),
         "diagram_text": diagram_text,
         "svg_text": svg_text,
         "critic_highlight": critic_highlight,
@@ -675,6 +677,7 @@ class AppHandler(BaseHTTPRequestHandler):
                         out_dir=run_root / "single_shot",
                         mode="single_prompt",
                         critic_rounds=0,
+                      shared_evaluation_group_dir=run_root,
                     ),
                     _execute_run(
                         label="Multi-Agent Critic Off",
@@ -682,6 +685,7 @@ class AppHandler(BaseHTTPRequestHandler):
                         out_dir=run_root / "critic_off",
                         mode="multi_agent",
                         critic_rounds=0,
+                      shared_evaluation_group_dir=run_root,
                     ),
                     _execute_run(
                         label="Multi-Agent Critic On",
@@ -689,6 +693,7 @@ class AppHandler(BaseHTTPRequestHandler):
                         out_dir=run_root / "critic_on",
                         mode="multi_agent",
                         critic_rounds=1,
+                      shared_evaluation_group_dir=run_root,
                     ),
                 ]
                 analysis_export = _build_analysis_export(

@@ -25,6 +25,24 @@ Return strict Markdown using this exact H2 structure:
 ## architecture_signals
 - <signal type>: <evidence from file>
 
+## runtime_targets
+- <runtime target>: <evidence from file>
+
+## entrypoints_by_runtime
+- <runtime target>: <entrypoint file/function/command>
+
+## auth_and_config
+- <config/auth item>: <where defined and where used>
+
+## model_artifacts_and_formats
+- <artifact>: <format> | <producer/consumer evidence>
+
+## conversion_and_training_flow
+- <upstream artifact> -> <conversion step> -> <downstream runtime/artifact>
+
+## output_artifacts
+- <artifact or path pattern>: <producer and evidence>
+
 ## confidence
 <float between 0 and 1>
 
@@ -52,3 +70,9 @@ For multi-file consolidation outputs, use this header instead of `file_path`:
 - If a section has no clear evidence, write `none`.
 - In `architecture_signals`, prefer concrete categories such as API handlers, database access, queues, jobs, messaging, config, orchestration, or external integrations.
 - Omit optional sections when there is no evidence.
+- For required sections, never omit; write `none` when unknown.
+- Keep implementation-backed names (file paths, env var names, CLI flags, function/class names) whenever evidence exists.
+- Do not collapse distinct runtime targets into one generic label if separate targets are evidenced.
+- For notebook files (`.ipynb`), prioritize code cell logic, markdown headings, CLI snippets, and explicit config/model/output references. Ignore execution counters, large output blobs, and metadata noise.
+- Preserve specific evidence for auth and environment configuration (for example `.env`, environment variable names, token/key names).
+- Preserve model lineage details when present (for example training artifacts, conversion notebook/script, final deployment format).

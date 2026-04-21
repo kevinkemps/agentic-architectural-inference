@@ -1,14 +1,16 @@
 # Core Evaluation Questions
 
 These are the fixed cross-repository evaluation questions.
+They are intentionally architecture-level so that a good high-level diagram
+can answer them without requiring line-level code recall.
 
 1. What is the overall purpose of the repository?
-2. What is the entry point for this repository?
-3. What is the execution flow?
-4. What data sources and sinks exist in this program?
-5. Based on the complexity of the functions and the number of dependencies, which parts of this codebase are likely the most fragile or difficult to test?
-6. What architectural design patterns are most prevalent in this project?
-7. Is there an independently deployable backend service in this project?
+2. What are the main top-level subsystems or modules in this repository?
+3. What are the primary runtime boundaries or execution environments represented in this system?
+4. What external systems, APIs, or devices does this repository integrate with?
+5. What persistent stores, streams, queues, or other major data-holding components exist in the system?
+6. What are the main data or control flows between the major subsystems?
+7. Which parts of the system appear to act as entrypoints, orchestrators, or coordinators?
 
 ## Repo-Specific Question Generation Guidelines
 
@@ -24,6 +26,7 @@ Good repo-specific questions:
 - probe the most important subsystem-specific flows in the repo
 - cover important artifacts such as training pipelines, batch jobs, local runtimes, message flows, or serving layers when present
 - focus on architecture-level understanding rather than syntax trivia
+- stay answerable from a good high-level architecture diagram, not only from low-level code details
 
 Avoid questions that:
 - duplicate the fixed core questions above
@@ -31,6 +34,7 @@ Avoid questions that:
 - are pure yes/no questions unless they check a meaningful architectural property
 - are likely to be unanswerable even with a good repository scan
 - require knowledge outside the repository evidence
+- require detailed function-level reasoning that a high-level diagram is not expected to capture
 
 Examples of acceptable repo-specific themes:
 - platform-specific code paths

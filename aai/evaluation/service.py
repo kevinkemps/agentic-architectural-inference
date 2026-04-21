@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import json
 import re
+import uuid
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
-if __package__:
+try:
     from ..lib.prompts import (
         EVALUATION_DIAGRAM_PROMPT,
         EVALUATION_JUDGE_PROMPT,
@@ -15,7 +16,7 @@ if __package__:
         EVALUATION_REPO_PROMPT,
     )
     from ..lib.repo_reader import load_readme, load_repo_files
-else:  # pragma: no cover - supports running from inside aai/
+except ImportError:  # pragma: no cover - supports running from inside aai/
     from lib.prompts import (  # type: ignore[no-redef]
         EVALUATION_DIAGRAM_PROMPT,
         EVALUATION_JUDGE_PROMPT,
@@ -77,6 +78,77 @@ def _write_question_markdown(path: Path, title: str, questions: list[str]) -> No
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
+def _parse_numbered_questions(text: str) -> list[str]:
+    questions: list[str] = []
+    for line in text.splitlines():
+        match = re.match(r"^\s*\d+\.\s+(.*\S)\s*$", line)
+        if match:
+            questions.append(match.group(1))
+    return questions
+
+
+def _load_reused_repo_specific_questions(
+    *,
+    shared_group_root: str | Path | None,
+    current_run_output_dir: str | Path | None,
+) -> list[str] | None:
+    if shared_group_root is None:
+        return None
+
+    group_root = Path(shared_group_root)
+    if not group_root.exists() or not group_root.is_dir():
+        return None
+
+    current_output = Path(current_run_output_dir).resolve() if current_run_output_dir else None
+    candidates = sorted(group_root.glob("*/evaluation/repo_specific_eval_questions.md"))
+
+    for candidate in candidates:
+        run_output_dir = candidate.parent.parent.resolve()
+        if current_output is not None and run_output_dir == current_output:
+            continue
+        parsed = _parse_numbered_questions(candidate.read_text(encoding="utf-8"))
+        if len(parsed) >= 5:
+            return parsed
+
+    return None
+
+
+def _load_reused_repo_answers(
+    *,
+    shared_group_root: str | Path | None,
+    current_run_output_dir: str | Path | None,
+) -> tuple[dict, str | None] | None:
+    if shared_group_root is None:
+        return None
+
+    group_root = Path(shared_group_root)
+    if not group_root.exists() or not group_root.is_dir():
+        return None
+
+    current_output = Path(current_run_output_dir).resolve() if current_run_output_dir else None
+    candidates = sorted(group_root.glob("*/evaluation/repo_answers.json"))
+
+    for candidate in candidates:
+        run_output_dir = candidate.parent.parent.resolve()
+        if current_output is not None and run_output_dir == current_output:
+            continue
+
+        try:
+            payload = json.loads(candidate.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            continue
+
+        answers = payload.get("answers", []) if isinstance(payload, dict) else []
+        if not isinstance(answers, list) or not answers:
+            continue
+
+        raw_path = candidate.parent / "debug_raw_responses" / "repo_answers.raw.txt"
+        raw_text = raw_path.read_text(encoding="utf-8") if raw_path.exists() else None
+        return payload, raw_text
+
+    return None
+
+
 def build_repo_digest(
     repo_path: str | Path,
     *,
@@ -89,15 +161,19 @@ def build_repo_digest(
         max_files=max_files,
         max_chars_per_file=max_chars_per_file,
     )
+    non_notebook_files = [source for source in files if not source.path.lower().endswith(".ipynb")]
 
     digest_parts = []
     if readme:
         digest_parts.append(f"## README\n{readme[:6000]}")
 
-    file_list = "\n".join(f"- {source.path}" for source in files)
+    if non_notebook_files:
+        file_list = "\n".join(f"- {source.path}" for source in non_notebook_files)
+    else:
+        file_list = "- (no non-notebook files were sampled for evaluation digest)"
     digest_parts.append(f"## Sampled Files\n{file_list}")
 
-    for source in files:
+    for source in non_notebook_files:
         digest_parts.append(f"## FILE: {source.path}\n{source.content}")
 
     return "\n\n".join(digest_parts)
@@ -119,32 +195,85 @@ def _add_usage(left: TokenStats, right: TokenStats) -> TokenStats:
         total_tokens=left.total_tokens + right.total_tokens,
     )
 
-
 def _score_questions(question_scores: list[dict]) -> float:
     if not question_scores:
         return 0.0
     total_score = sum(int(item.get("score", 0) or 0) for item in question_scores)
     return (total_score / (len(question_scores) * 5)) * 100
+  
+def _raw_response_debug_dir(output_dir: str | Path | None) -> Path:
+    if output_dir is not None:
+        return Path(output_dir) / "debug_raw_responses"
+    return Path("/tmp") / "aai_eval_debug" / uuid.uuid4().hex
 
 
-def _extract_json(text: str) -> dict:
+def _response_text(content: object) -> str:
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts = []
+        for item in content:
+            if isinstance(item, dict) and "text" in item:
+                parts.append(str(item["text"]))
+            else:
+                parts.append(str(item))
+        return "\n".join(parts)
+    return str(content)
+
+
+def _write_raw_response(*, debug_dir: Path, step_name: str, raw_text: str) -> None:
+    debug_dir.mkdir(parents=True, exist_ok=True)
+    (debug_dir / f"{step_name}.raw.txt").write_text(raw_text, encoding="utf-8")
+
+
+def _extract_json(text: str, *, step_name: str) -> dict:
+    parse_errors: list[json.JSONDecodeError] = []
+
     try:
         return json.loads(text)
-    except json.JSONDecodeError:
-        match = re.search(r"\{.*\}", text, re.DOTALL)
-        if not match:
-            raise RuntimeError("LLM response did not contain JSON.")
-        return json.loads(match.group(0))
+    except json.JSONDecodeError as exc:
+        parse_errors.append(exc)
+
+    for match in re.finditer(r"```json\s*(\{.*?\})\s*```", text, re.IGNORECASE | re.DOTALL):
+        candidate = match.group(1).strip()
+        try:
+            return json.loads(candidate)
+        except json.JSONDecodeError as exc:
+            parse_errors.append(exc)
+
+    for match in re.finditer(r"\{.*?\}", text, re.DOTALL):
+        candidate = match.group(0).strip()
+        try:
+            return json.loads(candidate)
+        except json.JSONDecodeError as exc:
+            parse_errors.append(exc)
+
+    message = (
+        f"Failed to parse JSON for evaluation step '{step_name}'. "
+        "Tried strict JSON, fenced json blocks, and object extraction."
+    )
+    if parse_errors:
+        raise RuntimeError(message) from parse_errors[-1]
+    raise RuntimeError(message)
 
 
-def _invoke_json(llm, system_prompt: str, human_content: str) -> tuple[dict, TokenStats]:
+def _invoke_json(
+    llm,
+    system_prompt: str,
+    human_content: str,
+    *,
+    step_name: str,
+    debug_dir: Path,
+) -> tuple[dict, TokenStats]:
     response = llm.invoke(
         [
             SystemMessage(content=system_prompt),
             HumanMessage(content=human_content),
         ]
     )
-    return _extract_json(response.content), _usage_from_response(response)
+    raw_text = _response_text(getattr(response, "content", ""))
+    _write_raw_response(debug_dir=debug_dir, step_name=step_name, raw_text=raw_text)
+    return _extract_json(raw_text, step_name=step_name), _usage_from_response(response)
 
 
 def generate_repo_specific_questions(
@@ -152,6 +281,7 @@ def generate_repo_specific_questions(
     repo_digest: str,
     core_questions: list[str],
     llm,
+    debug_dir: Path,
 ) -> tuple[list[str], TokenStats]:
     core_question_block = "\n".join(
         f"{index}. {question}" for index, question in enumerate(core_questions, start=1)
@@ -163,6 +293,8 @@ def generate_repo_specific_questions(
             f"## Fixed Core Questions\n{core_question_block}\n\n"
             f"## Repository Digest\n{repo_digest}"
         ),
+        step_name="question_generator",
+        debug_dir=debug_dir,
     )
     raw_questions = payload.get("questions", [])
     cleaned_questions: list[str] = []
@@ -193,26 +325,53 @@ def evaluate_diagram(
     llm,
     questions_path: str | Path | None = None,
     output_dir: str | Path | None = None,
+    shared_evaluation_group_dir: str | Path | None = None,
 ) -> EvaluationResult:
     core_questions = load_questions(questions_path)
     repo_digest = build_repo_digest(repo_path)
-    repo_specific_questions, question_usage = generate_repo_specific_questions(
-        repo_digest=repo_digest,
-        core_questions=core_questions,
-        llm=llm,
+    debug_dir = _raw_response_debug_dir(output_dir)
+    current_run_output_dir = Path(output_dir).parent if output_dir is not None else None
+    repo_specific_questions = _load_reused_repo_specific_questions(
+        shared_group_root=shared_evaluation_group_dir,
+        current_run_output_dir=current_run_output_dir,
     )
+    if repo_specific_questions is None:
+        repo_specific_questions, question_usage = generate_repo_specific_questions(
+            repo_digest=repo_digest,
+            core_questions=core_questions,
+            llm=llm,
+            debug_dir=debug_dir,
+        )
+    else:
+        question_usage = TokenStats()
     questions = [*core_questions, *repo_specific_questions]
     question_block = "\n".join(f"{index}. {question}" for index, question in enumerate(questions, start=1))
 
-    repo_payload, repo_usage = _invoke_json(
-        llm,
-        EVALUATION_REPO_PROMPT,
-        f"## Questions\n{question_block}\n\n## Repository Digest\n{repo_digest}",
+    reused_repo_answers = _load_reused_repo_answers(
+        shared_group_root=shared_evaluation_group_dir,
+        current_run_output_dir=current_run_output_dir,
     )
+    if reused_repo_answers is None:
+        repo_payload, repo_usage = _invoke_json(
+            llm,
+            EVALUATION_REPO_PROMPT,
+            f"## Questions\n{question_block}\n\n## Repository Digest\n{repo_digest}",
+            step_name="repo_answers",
+            debug_dir=debug_dir,
+        )
+    else:
+        repo_payload, reused_raw_text = reused_repo_answers
+        repo_usage = TokenStats()
+        if reused_raw_text is None:
+            reused_raw_text = json.dumps(repo_payload, indent=2)
+        _write_raw_response(debug_dir=debug_dir, step_name="repo_answers", raw_text=reused_raw_text)
+
     diagram_payload, diagram_usage = _invoke_json(
         llm,
         EVALUATION_DIAGRAM_PROMPT,
         f"## Questions\n{question_block}\n\n## Mermaid Diagram\n{diagram_text}",
+        step_name="diagram_answers",
+        debug_dir=debug_dir,
     )
     judge_payload, judge_usage = _invoke_json(
         llm,
@@ -222,6 +381,8 @@ def evaluate_diagram(
             f"## Repository Answers\n{json.dumps(repo_payload, indent=2)}\n\n"
             f"## Diagram Answers\n{json.dumps(diagram_payload, indent=2)}"
         ),
+        step_name="judge",
+        debug_dir=debug_dir,
     )
 
     question_scores = judge_payload.get("questions", [])

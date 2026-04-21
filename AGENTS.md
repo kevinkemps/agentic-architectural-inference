@@ -23,6 +23,7 @@ Primary implementation lives in `aai/`:
 - `aai/cli.py`: CLI entrypoint and runtime flags
 - `aai/pipeline.py`: pipeline orchestration for stage execution and critique loops
 - `aai/lib/agents.py`: concrete agent classes and file handoffs
+- `aai/lib/architecture_schema.py`: canonical architecture schema normalization and Mermaid rendering using controlled categories plus repo-specific modules
 - `aai/lib/prompts.py`: prompt loading from `prompts/*.md`
 - `aai/lib/repo_reader.py`: source file scanning and filtering rules
 - `aai/evaluation/service.py`: repository-vs-diagram evaluation and scoring
@@ -110,10 +111,10 @@ runs may write a combined `debug_analysis.json` at the run root.
 
 - Class: `ArchitectAgent`
 - Draft reads: `02_aggregate/*.md`
-- Draft writes: `03_draft/mermaid.md`
+- Draft writes: `03_draft/architecture.json`, `03_draft/mermaid.md`
 - Revise reads: `02_aggregate/*.md`, `03_draft/*.md`, `04_critique/*.md`
-- Revise writes: `05_refined/mermaid.md`
-- Responsibility: produce and revise Mermaid architecture based on evidence and critic feedback
+- Revise writes: `05_refined/architecture.json`, `05_refined/mermaid.md`
+- Responsibility: produce and revise a canonical architecture spec with controlled categories and repo-specific modules, then render a standardized Mermaid diagram from that spec
 
 ### 4) CritiqueAgent (Falsification)
 
@@ -136,6 +137,9 @@ runs may write a combined `debug_analysis.json` at the run root.
 - Flow is linear until critique, then loops critique -> revise.
 - The CLI and web app also support a `single_prompt` baseline mode that skips scout,
   aggregate, and critique loops and writes a draft diagram from one repository digest prompt.
+- Architect generation is standardized in two steps:
+  - the LLM produces a canonical architecture JSON spec
+  - runtime code normalizes category/module structure and renders Mermaid deterministically
 - Loop exits when either:
   - no critique output is returned, or
   - completed rounds meet `--critic-rounds`.
