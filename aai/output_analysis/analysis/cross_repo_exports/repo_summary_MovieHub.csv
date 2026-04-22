@@ -1,0 +1,4 @@
+repo,framework,n_runs,core_score_mean,core_score_median,overall_score_mean,overall_score_median,duration_mean_s,duration_median_s,input_tokens_mean,output_tokens_mean,total_tokens_mean,variation_pct_unanswered,variation_pct_strong_answer
+MovieHub,Single Shot,28,93.061,91.429,58.571,58.82,8.143,7.825,2973.0,526.536,3499.536,16.071,9.643
+MovieHub,Critic Off,28,96.633,97.143,58.276,58.82,24.786,24.088,21414.714,1813.643,23228.357,22.5,11.786
+MovieHub,Critic On,28,96.429,97.143,62.605,60.59,48.238,47.842,30851.714,3631.321,34483.036,18.214,19.286
